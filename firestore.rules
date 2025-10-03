@@ -1,0 +1,41 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // دالة للتحقق من ملكية الاشتراك
+    function isOwner(tenantId) {
+      return exists(/databases/$(database)/documents/tenants/$(tenantId)) &&
+             get(/databases/$(database)/documents/tenants/$(tenantId)).data.ownerUid == request.auth.uid;
+    }
+    
+    // دالة للتحقق من وجود المستخدم المسجل
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    // قواعد الاشتراكات (tenants)
+    match /tenants/{tenantId} {
+      allow read, write: if isAuthenticated() && isOwner(tenantId);
+      
+      // قواعد المشتركين
+      match /customers/{customerId} {
+        allow read, write: if isAuthenticated() && isOwner(tenantId);
+      }
+      
+      // قواعد الوصولات
+      match /invoices/{invoiceId} {
+        allow read, write: if isAuthenticated() && isOwner(tenantId);
+      }
+      
+      // قواعد النفقات
+      match /expenses/{expenseId} {
+        allow read, write: if isAuthenticated() && isOwner(tenantId);
+      }
+      
+      // قواعد الإعدادات (إذا تم استخدامها كمجموعة منفصلة)
+      match /settings/{docId} {
+        allow read, write: if isAuthenticated() && isOwner(tenantId);
+      }
+    }
+  }
+}

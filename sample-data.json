@@ -1,0 +1,207 @@
+{
+  "tenant": {
+    "name": "اشتراك ضيعة النور",
+    "address": "بيروت - الطريق الجديدة - شارع الحمراء",
+    "phone": "03 123 456",
+    "defaultCurrencyMode": "USD",
+    "exchangeRate": 90000,
+    "lbpRounding": 1000,
+    "printTemplate": "A5"
+  },
+  "customers": [
+    {
+      "name": "محمد علي",
+      "phone": "70 555 444",
+      "address": "بيروت - الجناح - شارع الحمراء",
+      "meterRef": "MTR-001"
+    },
+    {
+      "name": "فاطمة أحمد",
+      "phone": "71 666 777",
+      "address": "طرابلس - باب التبانة",
+      "meterRef": "MTR-002"
+    },
+    {
+      "name": "علي حسن",
+      "phone": "72 888 999",
+      "address": "صيدا - شارع الميناء",
+      "meterRef": "MTR-003"
+    },
+    {
+      "name": "نور الدين",
+      "phone": "73 111 222",
+      "address": "بيروت - الأشرفية",
+      "meterRef": "MTR-004"
+    },
+    {
+      "name": "سارة محمد",
+      "phone": "74 333 444",
+      "address": "جونية - شارع البحر",
+      "meterRef": "MTR-005"
+    }
+  ],
+  "invoices": [
+    {
+      "customerId": "customer_1",
+      "period": "2025-01",
+      "meterPrev": 1200,
+      "meterCurr": 1260,
+      "consumptionKwh": 60,
+      "pricingMode": "USD",
+      "pricePerKwhUsd": 0.45,
+      "fixedFeeValue": 6,
+      "extras": [
+        {
+          "label": "متأخرات أيلول",
+          "value": 3
+        }
+      ],
+      "exchangeRateUsed": 90000,
+      "totalUsd": 36,
+      "totalLbp": 3240000,
+      "note": "يرجى التسديد خلال 3 أيام"
+    },
+    {
+      "customerId": "customer_2",
+      "period": "2025-01",
+      "meterPrev": 800,
+      "meterCurr": 850,
+      "consumptionKwh": 50,
+      "pricingMode": "LBP",
+      "pricePerKwhLbp": 40000,
+      "fixedFeeValue": 300000,
+      "extras": [],
+      "exchangeRateUsed": 90000,
+      "totalUsd": 25.56,
+      "totalLbp": 2300000,
+      "note": ""
+    },
+    {
+      "customerId": "customer_3",
+      "period": "2025-01",
+      "meterPrev": 1500,
+      "meterCurr": 1580,
+      "consumptionKwh": 80,
+      "pricingMode": "DUAL",
+      "pricePerKwhUsd": 0.50,
+      "pricePerKwhLbp": 45000,
+      "fixedFeeValue": 8,
+      "extras": [
+        {
+          "label": "خدمات إضافية",
+          "value": 2
+        }
+      ],
+      "exchangeRateUsed": 90000,
+      "totalUsd": 50,
+      "totalLbp": 4500000,
+      "note": "شكراً لاستخدام خدماتنا"
+    },
+    {
+      "customerId": "customer_1",
+      "period": "2025-02",
+      "meterPrev": 1260,
+      "meterCurr": 1320,
+      "consumptionKwh": 60,
+      "pricingMode": "USD",
+      "pricePerKwhUsd": 0.45,
+      "fixedFeeValue": 6,
+      "extras": [],
+      "exchangeRateUsed": 90000,
+      "totalUsd": 33,
+      "totalLbp": 2970000,
+      "note": ""
+    },
+    {
+      "customerId": "customer_2",
+      "period": "2025-02",
+      "meterPrev": 850,
+      "meterCurr": 920,
+      "consumptionKwh": 70,
+      "pricingMode": "LBP",
+      "pricePerKwhLbp": 40000,
+      "fixedFeeValue": 300000,
+      "extras": [
+        {
+          "label": "حسم مبكر",
+          "value": -50000
+        }
+      ],
+      "exchangeRateUsed": 90000,
+      "totalUsd": 28.89,
+      "totalLbp": 2600000,
+      "note": "خصم 5% للدفع المبكر"
+    }
+  ],
+  "expenses": [
+    {
+      "period": "2025-01",
+      "type": "DIESEL",
+      "label": "ثمن مازوت",
+      "amountValue": 250,
+      "amountCurrency": "USD"
+    },
+    {
+      "period": "2025-01",
+      "type": "OTHER",
+      "label": "صيانة المولد",
+      "amountValue": 150,
+      "amountCurrency": "USD"
+    },
+    {
+      "period": "2025-01",
+      "type": "OTHER",
+      "label": "قطع غيار",
+      "amountValue": 1000000,
+      "amountCurrency": "LBP"
+    },
+    {
+      "period": "2025-02",
+      "type": "DIESEL",
+      "label": "ثمن مازوت",
+      "amountValue": 280,
+      "amountCurrency": "USD"
+    },
+    {
+      "period": "2025-02",
+      "type": "OTHER",
+      "label": "راتب عامل",
+      "amountValue": 200,
+      "amountCurrency": "USD"
+    }
+  ],
+  "testScenarios": {
+    "january2025": {
+      "period": "2025-01",
+      "expectedInvoices": {
+        "totalUsd": 111.56,
+        "totalLbp": 10040000,
+        "totalConsumption": 190
+      },
+      "expectedExpenses": {
+        "totalUsd": 500,
+        "totalLbp": 1000000
+      },
+      "expectedNet": {
+        "usd": -388.44,
+        "lbp": -9040000
+      }
+    },
+    "february2025": {
+      "period": "2025-02",
+      "expectedInvoices": {
+        "totalUsd": 61.89,
+        "totalLbp": 5570000,
+        "totalConsumption": 130
+      },
+      "expectedExpenses": {
+        "totalUsd": 480,
+        "totalLbp": 0
+      },
+      "expectedNet": {
+        "usd": -418.11,
+        "lbp": 5570000
+      }
+    }
+  }
+}
