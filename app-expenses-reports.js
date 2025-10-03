@@ -422,3 +422,4 @@ document.addEventListener('DOMContentLoaded', () => {
         window.app.expensesManager = new ExpensesReportsManager(window.app);
     }
 });
+

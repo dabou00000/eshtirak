@@ -409,3 +409,5 @@ document.addEventListener('DOMContentLoaded', () => {
         window.app.uiEnhancements = new UIEnhancements(window.app);
     }
 });
+
+

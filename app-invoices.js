@@ -522,3 +522,4 @@ document.addEventListener('DOMContentLoaded', () => {
         window.app.invoiceManager = new InvoiceManager(window.app);
     }
 });
+

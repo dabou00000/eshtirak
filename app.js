@@ -12,37 +12,33 @@ class ElectricitySubscriptionApp {
     }
 
     async init() {
-        // مراقبة حالة المصادقة
-        firebase.onAuthStateChanged(firebase.auth, async (user) => {
-            if (user) {
-                this.currentUser = user;
-                await this.loadTenantData();
-                this.showAppScreen();
-            } else {
-                this.currentUser = null;
-                this.showLoginScreen();
-            }
-        });
-
+        // عرض شاشة تسجيل الدخول مباشرة
+        this.showLoginScreen();
         this.setupEventListeners();
     }
 
     async loadTenantData() {
         try {
-            // البحث عن tenant للمستخدم الحالي
-            const tenantsQuery = firebase.query(
-                firebase.collection(firebase.db, 'tenants'),
-                firebase.where('ownerUid', '==', this.currentUser.uid)
-            );
-            const tenantsSnapshot = await firebase.getDocs(tenantsQuery);
+            // تحميل الإعدادات من LocalStorage
+            const stored = localStorage.getItem('settings');
+            const defaultSettings = {
+                name: 'اشتراك الكهرباء',
+                address: '',
+                phone: '',
+                defaultCurrencyMode: 'USD',
+                exchangeRate: 90000,
+                lbpRounding: 1000,
+                printTemplate: 'A5'
+            };
             
-            if (tenantsSnapshot.empty) {
-                // إنشاء tenant جديد
-                await this.createDefaultTenant();
-            } else {
-                this.currentTenant = tenantsSnapshot.docs[0];
-                await this.loadAllData();
-            }
+            this.settings = stored ? JSON.parse(stored) : defaultSettings;
+            
+            // إنشاء tenant افتراضي
+            this.currentTenant = { 
+                id: 'default-tenant',
+                data: () => this.settings
+            };
+            await this.loadAllData();
         } catch (error) {
             console.error('خطأ في تحميل بيانات الاشتراك:', error);
             this.showToast('خطأ في تحميل البيانات', 'error');
@@ -105,41 +101,23 @@ class ElectricitySubscriptionApp {
     }
 
     async loadCustomers() {
-        const customersQuery = firebase.query(
-            firebase.collection(firebase.db, `tenants/${this.currentTenant.id}/customers`),
-            firebase.orderBy('name')
-        );
-        const snapshot = await firebase.getDocs(customersQuery);
-        this.customers = snapshot.docs.map(doc => ({
-            id: doc.id,
-            ...doc.data()
-        }));
+        // تحميل من LocalStorage
+        const stored = localStorage.getItem('customers');
+        this.customers = stored ? JSON.parse(stored) : [];
         this.renderCustomers();
     }
 
     async loadInvoices() {
-        const invoicesQuery = firebase.query(
-            firebase.collection(firebase.db, `tenants/${this.currentTenant.id}/invoices`),
-            firebase.orderBy('period', 'desc')
-        );
-        const snapshot = await firebase.getDocs(invoicesQuery);
-        this.invoices = snapshot.docs.map(doc => ({
-            id: doc.id,
-            ...doc.data()
-        }));
+        // تحميل من LocalStorage
+        const stored = localStorage.getItem('invoices');
+        this.invoices = stored ? JSON.parse(stored) : [];
         this.renderInvoices();
     }
 
     async loadExpenses() {
-        const expensesQuery = firebase.query(
-            firebase.collection(firebase.db, `tenants/${this.currentTenant.id}/expenses`),
-            firebase.orderBy('period', 'desc')
-        );
-        const snapshot = await firebase.getDocs(expensesQuery);
-        this.expenses = snapshot.docs.map(doc => ({
-            id: doc.id,
-            ...doc.data()
-        }));
+        // تحميل من LocalStorage
+        const stored = localStorage.getItem('expenses');
+        this.expenses = stored ? JSON.parse(stored) : [];
         this.renderExpenses();
     }
 
@@ -149,6 +127,12 @@ class ElectricitySubscriptionApp {
             e.preventDefault();
             this.handleLogin();
         });
+
+        // إزالة التحقق من صحة الإيميل
+        const emailInput = document.getElementById('email');
+        if (emailInput) {
+            emailInput.setAttribute('novalidate', 'true');
+        }
 
         // الخروج
         document.getElementById('logout-btn').addEventListener('click', () => {
@@ -275,23 +259,23 @@ class ElectricitySubscriptionApp {
         const password = document.getElementById('password').value;
         const errorDiv = document.getElementById('login-error');
 
-        try {
-            await firebase.signInWithEmailAndPassword(firebase.auth, email, password);
+        // تسجيل دخول مبسط
+        if (email === 'admin' && password === 'admin123') {
+            // محاكاة تسجيل دخول ناجح
+            this.currentUser = { uid: 'admin-user', email: 'admin' };
+            await this.loadTenantData();
+            this.showAppScreen();
             errorDiv.classList.remove('show');
-        } catch (error) {
-            console.error('خطأ في تسجيل الدخول:', error);
-            errorDiv.textContent = this.getAuthErrorMessage(error.code);
+        } else {
+            errorDiv.textContent = 'اسم المستخدم أو كلمة المرور غير صحيحة';
             errorDiv.classList.add('show');
         }
     }
 
     async handleLogout() {
-        try {
-            await firebase.signOut(firebase.auth);
-        } catch (error) {
-            console.error('خطأ في تسجيل الخروج:', error);
-            this.showToast('خطأ في تسجيل الخروج', 'error');
-        }
+        this.currentUser = null;
+        this.currentTenant = null;
+        this.showLoginScreen();
     }
 
     getAuthErrorMessage(errorCode) {
@@ -337,6 +321,12 @@ class ElectricitySubscriptionApp {
     }
 
     loadSettingsForm() {
+        // تحميل الإعدادات من LocalStorage
+        const stored = localStorage.getItem('settings');
+        if (stored) {
+            this.settings = JSON.parse(stored);
+        }
+
         if (!this.settings) return;
 
         document.getElementById('tenant-name-input').value = this.settings.name || '';
@@ -358,13 +348,11 @@ class ElectricitySubscriptionApp {
                 exchangeRate: parseFloat(document.getElementById('exchange-rate').value),
                 lbpRounding: parseInt(document.getElementById('lbp-rounding').value),
                 printTemplate: document.getElementById('print-template').value,
-                updatedAt: firebase.serverTimestamp()
+                updatedAt: new Date().toISOString()
             };
 
-            await firebase.updateDoc(
-                firebase.doc(firebase.db, 'tenants', this.currentTenant.id),
-                settingsData
-            );
+            // حفظ في LocalStorage
+            localStorage.setItem('settings', JSON.stringify(settingsData));
 
             this.settings = { ...this.settings, ...settingsData };
             this.updateTenantName();
@@ -403,7 +391,7 @@ class ElectricitySubscriptionApp {
                 phone: document.getElementById('customer-phone').value,
                 address: document.getElementById('customer-address').value,
                 meterRef: document.getElementById('customer-meter-ref').value,
-                updatedAt: firebase.serverTimestamp()
+                updatedAt: new Date().toISOString()
             };
 
             const form = document.getElementById('customer-form');
@@ -411,20 +399,21 @@ class ElectricitySubscriptionApp {
 
             if (customerId) {
                 // تعديل مشترك موجود
-                await firebase.updateDoc(
-                    firebase.doc(firebase.db, `tenants/${this.currentTenant.id}/customers`, customerId),
-                    customerData
-                );
+                const index = this.customers.findIndex(c => c.id === customerId);
+                if (index !== -1) {
+                    this.customers[index] = { ...this.customers[index], ...customerData };
+                }
                 this.showToast('تم تعديل المشترك بنجاح', 'success');
             } else {
                 // إضافة مشترك جديد
-                customerData.createdAt = firebase.serverTimestamp();
-                await firebase.addDoc(
-                    firebase.collection(firebase.db, `tenants/${this.currentTenant.id}/customers`),
-                    customerData
-                );
+                customerData.id = 'customer_' + Date.now();
+                customerData.createdAt = new Date().toISOString();
+                this.customers.push(customerData);
                 this.showToast('تم إضافة المشترك بنجاح', 'success');
             }
+
+            // حفظ في LocalStorage
+            localStorage.setItem('customers', JSON.stringify(this.customers));
 
             this.closeModal(document.getElementById('customer-modal'));
             await this.loadCustomers();
@@ -468,9 +457,8 @@ class ElectricitySubscriptionApp {
         if (!confirm('هل أنت متأكد من حذف هذا المشترك؟')) return;
 
         try {
-            await firebase.deleteDoc(
-                firebase.doc(firebase.db, `tenants/${this.currentTenant.id}/customers`, customerId)
-            );
+            this.customers = this.customers.filter(c => c.id !== customerId);
+            localStorage.setItem('customers', JSON.stringify(this.customers));
             this.showToast('تم حذف المشترك بنجاح', 'success');
             await this.loadCustomers();
         } catch (error) {

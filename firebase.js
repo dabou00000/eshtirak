@@ -1,12 +1,11 @@
 // Firebase configuration
-// يجب استبدال هذه القيم بقيم مشروع Firebase الخاص بك
 const firebaseConfig = {
-    apiKey: "your-api-key-here",
-    authDomain: "your-project-id.firebaseapp.com",
-    projectId: "your-project-id",
-    storageBucket: "your-project-id.appspot.com",
-    messagingSenderId: "your-sender-id",
-    appId: "your-app-id"
+    apiKey: "AIzaSyCBHvfablQPFIC7I-FWi8dnybSp7hBlU5s",
+    authDomain: "eshtirak-bc4ba.firebaseapp.com",
+    projectId: "eshtirak-bc4ba",
+    storageBucket: "eshtirak-bc4ba.firebasestorage.app",
+    messagingSenderId: "633243793047",
+    appId: "1:633243793047:web:329b6b3ac0af8e7a975bd2"
 };
 
 // استيراد Firebase SDK v9
