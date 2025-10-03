@@ -1,4 +1,4 @@
-// وظائف الوصولات والنفقات والتقارير
+// وظائف الفواتير والسجلات
 class InvoiceManager {
     constructor(app) {
         this.app = app;
@@ -9,15 +9,15 @@ class InvoiceManager {
         const title = document.getElementById('invoice-modal-title');
         const form = document.getElementById('invoice-form');
 
-        // تحديث قائمة المشتركين
+        // تحديث قائمة الزبائن
         this.updateCustomerSelect();
 
         if (invoice) {
-            title.textContent = 'تعديل الوصل';
+            title.textContent = 'تعديل الفاتورة';
             this.populateInvoiceForm(invoice);
             form.dataset.invoiceId = invoice.id;
         } else {
-            title.textContent = 'إضافة وصل جديد';
+            title.textContent = 'إصدار فاتورة جديدة';
             form.reset();
             delete form.dataset.invoiceId;
             
@@ -26,19 +26,17 @@ class InvoiceManager {
             const currentMonth = currentDate.getFullYear() + '-' + 
                 String(currentDate.getMonth() + 1).padStart(2, '0');
             document.getElementById('invoice-period').value = currentMonth;
-            document.getElementById('exchange-rate-override').value = this.app.settings.exchangeRate || 90000;
         }
 
-        this.updatePricingMode();
         this.calculateConsumption();
         modal.classList.add('active');
     }
 
     updateCustomerSelect() {
         const select = document.getElementById('invoice-customer');
-        select.innerHTML = '<option value="">اختر المشترك</option>';
+        select.innerHTML = '<option value="">اختر الزبون</option>';
         
-        this.app.customers.forEach(customer => {
+        this.app.customers.filter(c => c.status === 'active').forEach(customer => {
             const option = document.createElement('option');
             option.value = customer.id;
             option.textContent = customer.name;
@@ -51,189 +49,92 @@ class InvoiceManager {
         document.getElementById('invoice-period').value = invoice.period;
         document.getElementById('meter-previous').value = invoice.meterPrev;
         document.getElementById('meter-current').value = invoice.meterCurr;
-        document.getElementById('pricing-mode').value = invoice.pricingMode;
-        document.getElementById('price-per-kwh-usd').value = invoice.pricePerKwhUsd || '';
-        document.getElementById('price-per-kwh-lbp').value = invoice.pricePerKwhLbp || '';
-        document.getElementById('fixed-fee').value = invoice.fixedFeeValue || '';
+        document.getElementById('price-per-kwh-usd').value = invoice.pricePerKwhUsd || 0;
+        document.getElementById('price-per-kwh-lbp').value = invoice.pricePerKwhLbp || 0;
+        document.getElementById('fixed-fee').value = invoice.fixedFeeValue;
+        document.getElementById('discount-amount').value = invoice.discountAmount || 0;
         document.getElementById('invoice-note').value = invoice.note || '';
-        document.getElementById('exchange-rate-override').value = invoice.exchangeRateUsed || this.app.settings.exchangeRate;
 
         // تحديث الدفعات الإضافية
         this.updateExtrasList(invoice.extras || []);
-    }
-
-    updatePricingMode() {
-        const mode = document.getElementById('pricing-mode').value;
-        const usdGroup = document.getElementById('price-usd-group');
-        const lbpGroup = document.getElementById('price-lbp-group');
-
-        usdGroup.style.display = mode === 'LBP' ? 'none' : 'block';
-        lbpGroup.style.display = mode === 'USD' ? 'none' : 'block';
-
-        // تحديث التسميات
-        const fixedFeeLabel = document.querySelector('label[for="fixed-fee"]');
-        if (mode === 'USD') {
-            fixedFeeLabel.textContent = 'الاشتراك الشهري (USD)';
-        } else if (mode === 'LBP') {
-            fixedFeeLabel.textContent = 'الاشتراك الشهري (LBP)';
-        } else {
-            fixedFeeLabel.textContent = 'الاشتراك الشهري';
-        }
-    }
-
-    calculateConsumption() {
-        const previous = parseFloat(document.getElementById('meter-previous').value) || 0;
-        const current = parseFloat(document.getElementById('meter-current').value) || 0;
-        const consumption = Math.max(0, current - previous);
-        
-        document.getElementById('consumption-display').textContent = consumption.toFixed(2);
-        return consumption;
-    }
-
-    addExtraItem() {
-        const container = document.getElementById('extras-list');
-        const extraDiv = document.createElement('div');
-        extraDiv.className = 'extra-item';
-        extraDiv.innerHTML = `
-            <input type="text" placeholder="وصف الدفعة" class="extra-label">
-            <input type="number" placeholder="القيمة" step="0.01" class="extra-value">
-            <button type="button" class="btn btn-danger" onclick="this.parentElement.remove()">حذف</button>
-        `;
-        container.appendChild(extraDiv);
     }
 
     updateExtrasList(extras) {
         const container = document.getElementById('extras-list');
         container.innerHTML = '';
         
-        extras.forEach(extra => {
-            const extraDiv = document.createElement('div');
-            extraDiv.className = 'extra-item';
-            extraDiv.innerHTML = `
-                <input type="text" placeholder="وصف الدفعة" class="extra-label" value="${extra.label}">
-                <input type="number" placeholder="القيمة" step="0.01" class="extra-value" value="${extra.value}">
-                <button type="button" class="btn btn-danger" onclick="this.parentElement.remove()">حذف</button>
-            `;
-            container.appendChild(extraDiv);
+        extras.forEach((extra, index) => {
+            this.addExtraItem(extra.label, extra.value, index);
         });
+    }
+
+    updateCustomerData() {
+        const customerId = document.getElementById('invoice-customer').value;
+        if (!customerId) return;
+
+        const customer = this.app.customers.find(c => c.id === customerId);
+        if (customer) {
+            // تحديث قراءة العداد السابقة
+            document.getElementById('meter-previous').value = customer.lastMeterReading || 0;
+            
+            // تحديث الأسعار والاشتراك
+            document.getElementById('price-per-kwh-usd').value = customer.priceUsd;
+            document.getElementById('price-per-kwh-lbp').value = customer.priceLbp;
+            document.getElementById('fixed-fee').value = customer.subscription;
+            
+            this.calculateConsumption();
+        }
+    }
+
+    calculateConsumption() {
+        const previous = parseFloat(document.getElementById('meter-previous').value) || 0;
+        const current = parseFloat(document.getElementById('meter-current').value) || 0;
+        const consumption = current - previous;
+        
+        document.getElementById('consumption-display').textContent = consumption.toFixed(2);
+        
+        if (consumption < 0) {
+            document.getElementById('consumption-display').style.color = 'red';
+        } else {
+            document.getElementById('consumption-display').style.color = 'green';
+        }
+    }
+
+    addExtraItem(label = '', value = 0, index = null) {
+        const container = document.getElementById('extras-list');
+        const itemIndex = index !== null ? index : container.children.length;
+        
+        const extraItem = document.createElement('div');
+        extraItem.className = 'extra-item';
+        extraItem.innerHTML = `
+            <div class="form-row">
+                <div class="form-group">
+                    <input type="text" class="extra-label" placeholder="وصف الدفعة" value="${label}">
+                </div>
+                <div class="form-group">
+                    <input type="number" class="extra-value" placeholder="القيمة" value="${value}" step="0.01">
+                </div>
+                <div class="form-group">
+                    <button type="button" class="btn btn-danger remove-extra" onclick="this.parentElement.parentElement.parentElement.remove()">حذف</button>
+                </div>
+            </div>
+        `;
+        
+        container.appendChild(extraItem);
     }
 
     calculateInvoice() {
         try {
             const consumption = this.calculateConsumption();
-            const pricingMode = document.getElementById('pricing-mode').value;
             const priceUsd = parseFloat(document.getElementById('price-per-kwh-usd').value) || 0;
             const priceLbp = parseFloat(document.getElementById('price-per-kwh-lbp').value) || 0;
             const fixedFee = parseFloat(document.getElementById('fixed-fee').value) || 0;
-            const exchangeRate = parseFloat(document.getElementById('exchange-rate-override').value) || this.app.settings.exchangeRate;
-
-            // جمع الدفعات الإضافية
-            const extras = [];
-            document.querySelectorAll('.extra-item').forEach(item => {
-                const label = item.querySelector('.extra-label').value;
-                const value = parseFloat(item.querySelector('.extra-value').value) || 0;
-                if (label && value !== 0) {
-                    extras.push({ label, value });
-                }
-            });
-
-            let energyCost, totalUsd, totalLbp;
-
-            if (pricingMode === 'USD') {
-                energyCost = consumption * priceUsd;
-                const extrasUsd = extras.reduce((sum, extra) => sum + extra.value, 0);
-                totalUsd = energyCost + fixedFee + extrasUsd;
-                totalLbp = this.app.roundLBP(totalUsd * exchangeRate);
-            } else if (pricingMode === 'LBP') {
-                energyCost = consumption * priceLbp;
-                const extrasLbp = extras.reduce((sum, extra) => sum + extra.value, 0);
-                totalLbp = this.app.roundLBP(energyCost + fixedFee + extrasLbp);
-                totalUsd = totalLbp / exchangeRate;
-            } else { // DUAL
-                const energyUsd = consumption * priceUsd;
-                const energyLbp = consumption * priceLbp;
-                const extrasUsd = extras.reduce((sum, extra) => sum + extra.value, 0);
-                const extrasLbp = extras.reduce((sum, extra) => sum + extra.value, 0);
-                totalUsd = energyUsd + fixedFee + extrasUsd;
-                totalLbp = this.app.roundLBP(energyLbp + fixedFee + extrasLbp);
-            }
-
-            // عرض النتائج
-            this.displayCalculationResults({
-                consumption,
-                energyCost,
-                fixedFee,
-                extras,
-                totalUsd,
-                totalLbp,
-                pricingMode
-            });
-
-        } catch (error) {
-            console.error('خطأ في الحساب:', error);
-            this.app.showToast('خطأ في الحساب', 'error');
-        }
-    }
-
-    displayCalculationResults(results) {
-        const container = document.getElementById('calculation-results');
-        container.innerHTML = `
-            <div class="calculation-item">
-                <span>الاستهلاك:</span>
-                <span>${results.consumption.toFixed(2)} كيلو واط</span>
-            </div>
-            <div class="calculation-item">
-                <span>كلفة الطاقة:</span>
-                <span>${this.app.formatCurrency(results.energyCost, results.pricingMode === 'LBP' ? 'LBP' : 'USD')}</span>
-            </div>
-            <div class="calculation-item">
-                <span>الاشتراك الشهري:</span>
-                <span>${this.app.formatCurrency(results.fixedFee, results.pricingMode === 'LBP' ? 'LBP' : 'USD')}</span>
-            </div>
-            ${results.extras.map(extra => `
-                <div class="calculation-item">
-                    <span>${extra.label}:</span>
-                    <span>${this.app.formatCurrency(extra.value, results.pricingMode === 'LBP' ? 'LBP' : 'USD')}</span>
-                </div>
-            `).join('')}
-            <div class="calculation-item">
-                <span>المجموع النهائي (USD):</span>
-                <span>${this.app.formatCurrency(results.totalUsd, 'USD')}</span>
-            </div>
-            <div class="calculation-item">
-                <span>المجموع النهائي (LBP):</span>
-                <span>${this.app.formatCurrency(results.totalLbp, 'LBP')}</span>
-            </div>
-        `;
-    }
-
-    async saveInvoice() {
-        try {
-            const consumption = this.calculateConsumption();
-            const pricingMode = document.getElementById('pricing-mode').value;
-            const priceUsd = parseFloat(document.getElementById('price-per-kwh-usd').value) || 0;
-            const priceLbp = parseFloat(document.getElementById('price-per-kwh-lbp').value) || 0;
-            const fixedFee = parseFloat(document.getElementById('fixed-fee').value) || 0;
-            const exchangeRate = parseFloat(document.getElementById('exchange-rate-override').value) || this.app.settings.exchangeRate;
+            const discount = parseFloat(document.getElementById('discount-amount').value) || 0;
+            const exchangeRate = this.app.settings.exchangeRate;
 
             // التحقق من صحة البيانات
             if (consumption < 0) {
                 this.app.showToast('العداد الحالي يجب أن يكون أكبر من أو يساوي العداد السابق', 'error');
-                return;
-            }
-
-            if (pricingMode === 'USD' && priceUsd <= 0) {
-                this.app.showToast('يرجى إدخال سعر صحيح للكيلو واط بالدولار', 'error');
-                return;
-            }
-
-            if (pricingMode === 'LBP' && priceLbp <= 0) {
-                this.app.showToast('يرجى إدخال سعر صحيح للكيلو واط بالليرة', 'error');
-                return;
-            }
-
-            if (pricingMode === 'DUAL' && (priceUsd <= 0 || priceLbp <= 0)) {
-                this.app.showToast('يرجى إدخال أسعار صحيحة للكيلو واط بالعملتين', 'error');
                 return;
             }
 
@@ -248,43 +149,114 @@ class InvoiceManager {
             });
 
             // حساب المجاميع
-            let totalUsd, totalLbp;
+            const energyCostUsd = consumption * priceUsd;
+            const energyCostLbp = consumption * priceLbp;
+            const extrasTotal = extras.reduce((sum, extra) => sum + extra.value, 0);
+            
+            const subtotalUsd = energyCostUsd + fixedFee + extrasTotal;
+            const subtotalLbp = energyCostLbp + (fixedFee * exchangeRate) + (extrasTotal * exchangeRate);
+            
+            const totalUsd = subtotalUsd - discount;
+            const totalLbp = subtotalLbp - (discount * exchangeRate);
 
-            if (pricingMode === 'USD') {
-                const energyCost = consumption * priceUsd;
-                const extrasUsd = extras.reduce((sum, extra) => sum + extra.value, 0);
-                totalUsd = energyCost + fixedFee + extrasUsd;
-                totalLbp = this.app.roundLBP(totalUsd * exchangeRate);
-            } else if (pricingMode === 'LBP') {
-                const energyCost = consumption * priceLbp;
-                const extrasLbp = extras.reduce((sum, extra) => sum + extra.value, 0);
-                totalLbp = this.app.roundLBP(energyCost + fixedFee + extrasLbp);
-                totalUsd = totalLbp / exchangeRate;
-            } else { // DUAL
-                const energyUsd = consumption * priceUsd;
-                const energyLbp = consumption * priceLbp;
-                const extrasUsd = extras.reduce((sum, extra) => sum + extra.value, 0);
-                const extrasLbp = extras.reduce((sum, extra) => sum + extra.value, 0);
-                totalUsd = energyUsd + fixedFee + extrasUsd;
-                totalLbp = this.app.roundLBP(energyLbp + fixedFee + extrasLbp);
+            // عرض النتائج
+            const resultsContainer = document.getElementById('calculation-results');
+            resultsContainer.innerHTML = `
+                <div class="calculation-item">
+                    <span>كلفة الطاقة (USD):</span>
+                    <span>${this.app.formatCurrency(energyCostUsd, 'USD')}</span>
+                </div>
+                <div class="calculation-item">
+                    <span>الاشتراك الشهري:</span>
+                    <span>${this.app.formatCurrency(fixedFee, 'USD')}</span>
+                </div>
+                <div class="calculation-item">
+                    <span>الدفعات الإضافية:</span>
+                    <span>${this.app.formatCurrency(extrasTotal, 'USD')}</span>
+                </div>
+                <div class="calculation-item">
+                    <span>المجموع الجزئي:</span>
+                    <span>${this.app.formatCurrency(subtotalUsd, 'USD')}</span>
+                </div>
+                <div class="calculation-item">
+                    <span>الخصم:</span>
+                    <span>-${this.app.formatCurrency(discount, 'USD')}</span>
+                </div>
+                <div class="calculation-item total">
+                    <span>المجموع النهائي (USD):</span>
+                    <span id="total-usd">${this.app.formatCurrency(totalUsd, 'USD')}</span>
+                </div>
+                <div class="calculation-item total">
+                    <span>المجموع النهائي (LBP):</span>
+                    <span id="total-lbp">${this.app.formatCurrency(totalLbp, 'LBP')}</span>
+                </div>
+            `;
+
+        } catch (error) {
+            console.error('خطأ في حساب الفاتورة:', error);
+            this.app.showToast('خطأ في حساب الفاتورة', 'error');
+        }
+    }
+
+    async saveInvoice() {
+        try {
+            const consumption = this.calculateConsumption();
+            const customerId = document.getElementById('invoice-customer').value;
+            const period = document.getElementById('invoice-period').value;
+            const priceUsd = parseFloat(document.getElementById('price-per-kwh-usd').value) || 0;
+            const priceLbp = parseFloat(document.getElementById('price-per-kwh-lbp').value) || 0;
+            const fixedFee = parseFloat(document.getElementById('fixed-fee').value) || 0;
+            const discount = parseFloat(document.getElementById('discount-amount').value) || 0;
+            const exchangeRate = this.app.settings.exchangeRate;
+
+            // التحقق من صحة البيانات
+            if (consumption < 0) {
+                this.app.showToast('العداد الحالي يجب أن يكون أكبر من أو يساوي العداد السابق', 'error');
+                return;
             }
 
+            if (!customerId) {
+                this.app.showToast('يرجى اختيار زبون', 'error');
+                return;
+            }
+
+            // جمع الدفعات الإضافية
+            const extras = [];
+            document.querySelectorAll('.extra-item').forEach(item => {
+                const label = item.querySelector('.extra-label').value;
+                const value = parseFloat(item.querySelector('.extra-value').value) || 0;
+                if (label && value !== 0) {
+                    extras.push({ label, value });
+                }
+            });
+
+            // حساب المجاميع
+            const energyCostUsd = consumption * priceUsd;
+            const energyCostLbp = consumption * priceLbp;
+            const extrasTotal = extras.reduce((sum, extra) => sum + extra.value, 0);
+            
+            const subtotalUsd = energyCostUsd + fixedFee + extrasTotal;
+            const subtotalLbp = energyCostLbp + (fixedFee * exchangeRate) + (extrasTotal * exchangeRate);
+            
+            const totalUsd = subtotalUsd - discount;
+            const totalLbp = subtotalLbp - (discount * exchangeRate);
+
             const invoiceData = {
-                customerId: document.getElementById('invoice-customer').value,
-                period: document.getElementById('invoice-period').value,
+                customerId,
+                period,
                 meterPrev: parseFloat(document.getElementById('meter-previous').value),
                 meterCurr: parseFloat(document.getElementById('meter-current').value),
                 consumptionKwh: consumption,
-                pricingMode,
-                pricePerKwhUsd: pricingMode !== 'LBP' ? priceUsd : null,
-                pricePerKwhLbp: pricingMode !== 'USD' ? priceLbp : null,
+                pricePerKwhUsd: priceUsd,
+                pricePerKwhLbp: priceLbp,
                 fixedFeeValue: fixedFee,
                 extras,
+                discountAmount: discount,
                 exchangeRateUsed: exchangeRate,
                 totalUsd,
                 totalLbp,
                 note: document.getElementById('invoice-note').value,
-                issuedAt: firebase.serverTimestamp(),
+                issuedAt: new Date().toISOString(),
                 createdBy: this.app.currentUser.uid
             };
 
@@ -292,158 +264,172 @@ class InvoiceManager {
             const invoiceId = form.dataset.invoiceId;
 
             if (invoiceId) {
-                // تعديل وصل موجود
-                await firebase.updateDoc(
-                    firebase.doc(firebase.db, `tenants/${this.app.currentTenant.id}/invoices`, invoiceId),
-                    invoiceData
-                );
-                this.app.showToast('تم تعديل الوصل بنجاح', 'success');
+                // تعديل فاتورة موجودة
+                const index = this.app.invoices.findIndex(inv => inv.id === invoiceId);
+                if (index !== -1) {
+                    this.app.invoices[index] = { ...this.app.invoices[index], ...invoiceData };
+                }
+                this.app.showToast('تم تعديل الفاتورة بنجاح', 'success');
             } else {
-                // إضافة وصل جديد
-                await firebase.addDoc(
-                    firebase.collection(firebase.db, `tenants/${this.app.currentTenant.id}/invoices`),
-                    invoiceData
-                );
-                this.app.showToast('تم إضافة الوصل بنجاح', 'success');
+                // إضافة فاتورة جديدة
+                invoiceData.id = 'invoice_' + Date.now();
+                invoiceData.createdAt = new Date().toISOString();
+                this.app.invoices.push(invoiceData);
+                this.app.showToast('تم إصدار الفاتورة بنجاح', 'success');
+
+                // تحديث آخر قراءة عداد للزبون
+                const customer = this.app.customers.find(c => c.id === customerId);
+                if (customer) {
+                    customer.lastMeterReading = invoiceData.meterCurr;
+                    localStorage.setItem('customers', JSON.stringify(this.app.customers));
+                }
             }
+
+            // حفظ في LocalStorage
+            localStorage.setItem('invoices', JSON.stringify(this.app.invoices));
 
             this.app.closeModal(document.getElementById('invoice-modal'));
             await this.app.loadInvoices();
             
-            // عرض معاينة الوصل
+            // عرض معاينة الفاتورة
             this.showInvoicePreview(invoiceData);
-
+            
         } catch (error) {
-            console.error('خطأ في حفظ الوصل:', error);
-            this.app.showToast('خطأ في حفظ الوصل', 'error');
+            console.error('خطأ في حفظ الفاتورة:', error);
+            this.app.showToast('خطأ في حفظ الفاتورة', 'error');
         }
     }
 
-    showInvoicePreview(invoiceData) {
-        const customer = this.app.customers.find(c => c.id === invoiceData.customerId);
-        if (!customer) return;
-
+    showInvoicePreview(invoice) {
+        const customer = this.app.customers.find(c => c.id === invoice.customerId);
         const modal = document.getElementById('print-modal');
         const preview = document.getElementById('invoice-preview');
         
-        preview.innerHTML = this.generateInvoiceHTML(invoiceData, customer);
+        preview.innerHTML = `
+            <div class="invoice-preview-content">
+                <div class="invoice-header">
+                    <h2>${this.app.settings.name}</h2>
+                    <p>${this.app.settings.address}</p>
+                    <p>📞 ${this.app.settings.phone}</p>
+                </div>
+                
+                <div class="invoice-details">
+                    <h3>فاتورة كهرباء</h3>
+                    <div class="invoice-info">
+                        <p><strong>رقم الفاتورة:</strong> ${invoice.id}</p>
+                        <p><strong>التاريخ:</strong> ${new Date(invoice.issuedAt).toLocaleDateString('ar-LB')}</p>
+                        <p><strong>الشهر:</strong> ${this.app.formatPeriod(invoice.period)}</p>
+                    </div>
+                </div>
+                
+                <div class="customer-info">
+                    <h4>بيانات الزبون</h4>
+                    <p><strong>الاسم:</strong> ${customer.name}</p>
+                    ${customer.address ? `<p><strong>العنوان:</strong> ${customer.address}</p>` : ''}
+                    ${customer.phone ? `<p><strong>الهاتف:</strong> ${customer.phone}</p>` : ''}
+                </div>
+                
+                <div class="meter-info">
+                    <h4>قراءات العداد</h4>
+                    <p><strong>العداد السابق:</strong> ${invoice.meterPrev}</p>
+                    <p><strong>العداد الحالي:</strong> ${invoice.meterCurr}</p>
+                    <p><strong>الاستهلاك:</strong> ${invoice.consumptionKwh} كيلو واط</p>
+                </div>
+                
+                <div class="calculation-details">
+                    <h4>تفاصيل الحساب</h4>
+                    <div class="calculation-row">
+                        <span>كلفة الطاقة (${invoice.consumptionKwh} × $${invoice.pricePerKwhUsd}):</span>
+                        <span>${this.app.formatCurrency(invoice.consumptionKwh * invoice.pricePerKwhUsd, 'USD')}</span>
+                    </div>
+                    <div class="calculation-row">
+                        <span>الاشتراك الشهري:</span>
+                        <span>${this.app.formatCurrency(invoice.fixedFeeValue, 'USD')}</span>
+                    </div>
+                    ${invoice.extras.map(extra => `
+                        <div class="calculation-row">
+                            <span>${extra.label}:</span>
+                            <span>${this.app.formatCurrency(extra.value, 'USD')}</span>
+                        </div>
+                    `).join('')}
+                    ${invoice.discountAmount > 0 ? `
+                        <div class="calculation-row discount">
+                            <span>الخصم:</span>
+                            <span>-${this.app.formatCurrency(invoice.discountAmount, 'USD')}</span>
+                        </div>
+                    ` : ''}
+                    <div class="calculation-row total">
+                        <span><strong>المجموع النهائي:</strong></span>
+                        <span><strong>${this.app.formatCurrency(invoice.totalUsd, 'USD')}</strong></span>
+                    </div>
+                    <div class="calculation-row total">
+                        <span><strong>المجموع بالليرة:</strong></span>
+                        <span><strong>${this.app.formatCurrency(invoice.totalLbp, 'LBP')}</strong></span>
+                    </div>
+                </div>
+                
+                ${invoice.note ? `
+                    <div class="invoice-note">
+                        <h4>ملاحظات</h4>
+                        <p>${invoice.note}</p>
+                    </div>
+                ` : ''}
+            </div>
+        `;
+        
         modal.classList.add('active');
     }
 
-    generateInvoiceHTML(invoice, customer) {
-        const periodText = this.app.formatPeriod(invoice.period);
-        
-        return `
-            <div class="invoice-header">
-                <h2>${this.app.settings.name}</h2>
-                <p>${this.app.settings.address}</p>
-                <p>📞 ${this.app.settings.phone}</p>
-            </div>
-            
-            <div class="invoice-details">
-                <table>
-                    <tr><th>المشترك:</th><td>${customer.name}</td></tr>
-                    <tr><th>الهاتف:</th><td>${customer.phone || '-'}</td></tr>
-                    <tr><th>العنوان:</th><td>${customer.address || '-'}</td></tr>
-                    <tr><th>الشهر:</th><td>${periodText}</td></tr>
-                    <tr><th>العداد السابق:</th><td>${invoice.meterPrev}</td></tr>
-                    <tr><th>العداد الحالي:</th><td>${invoice.meterCurr}</td></tr>
-                    <tr><th>الاستهلاك:</th><td>${invoice.consumptionKwh.toFixed(2)} كيلو واط</td></tr>
-                </table>
-            </div>
-            
-            <div class="invoice-totals">
-                <table>
-                    <tr><td>سعر الكيلو واط:</td><td>${this.getPriceDisplay(invoice)}</td></tr>
-                    <tr><td>كلفة الطاقة:</td><td>${this.getEnergyCostDisplay(invoice)}</td></tr>
-                    <tr><td>الاشتراك الشهري:</td><td>${this.getFixedFeeDisplay(invoice)}</td></tr>
-                    ${invoice.extras.map(extra => `
-                        <tr><td>${extra.label}:</td><td>${this.getExtraDisplay(extra, invoice.pricingMode)}</td></tr>
-                    `).join('')}
-                    <tr class="total-row">
-                        <td>المجموع النهائي:</td>
-                        <td>${this.app.formatCurrency(invoice.totalUsd, 'USD')} / ${this.app.formatCurrency(invoice.totalLbp, 'LBP')}</td>
-                    </tr>
-                </table>
-            </div>
-            
-            ${invoice.note ? `<div class="invoice-note"><strong>ملاحظة:</strong> ${invoice.note}</div>` : ''}
-            
-            <div class="invoice-footer">
-                <p>تاريخ الإصدار: ${new Date().toLocaleDateString('ar-LB')}</p>
-                <p>شكراً لاستخدام خدماتنا</p>
-            </div>
-        `;
-    }
-
-    getPriceDisplay(invoice) {
-        if (invoice.pricingMode === 'USD') {
-            return `$${invoice.pricePerKwhUsd.toFixed(2)}`;
-        } else if (invoice.pricingMode === 'LBP') {
-            return `${this.app.formatNumber(invoice.pricePerKwhLbp)} ل.ل`;
-        } else {
-            return `$${invoice.pricePerKwhUsd.toFixed(2)} / ${this.app.formatNumber(invoice.pricePerKwhLbp)} ل.ل`;
-        }
-    }
-
-    getEnergyCostDisplay(invoice) {
-        if (invoice.pricingMode === 'USD') {
-            return `$${(invoice.consumptionKwh * invoice.pricePerKwhUsd).toFixed(2)}`;
-        } else if (invoice.pricingMode === 'LBP') {
-            return `${this.app.formatNumber(invoice.consumptionKwh * invoice.pricePerKwhLbp)} ل.ل`;
-        } else {
-            const usdCost = invoice.consumptionKwh * invoice.pricePerKwhUsd;
-            const lbpCost = invoice.consumptionKwh * invoice.pricePerKwhLbp;
-            return `$${usdCost.toFixed(2)} / ${this.app.formatNumber(lbpCost)} ل.ل`;
-        }
-    }
-
-    getFixedFeeDisplay(invoice) {
-        if (invoice.pricingMode === 'USD') {
-            return `$${invoice.fixedFeeValue.toFixed(2)}`;
-        } else if (invoice.pricingMode === 'LBP') {
-            return `${this.app.formatNumber(invoice.fixedFeeValue)} ل.ل`;
-        } else {
-            return `$${invoice.fixedFeeValue.toFixed(2)} / ${this.app.formatNumber(invoice.fixedFeeValue)} ل.ل`;
-        }
-    }
-
-    getExtraDisplay(extra, pricingMode) {
-        if (pricingMode === 'USD') {
-            return `$${extra.value.toFixed(2)}`;
-        } else if (pricingMode === 'LBP') {
-            return `${this.app.formatNumber(extra.value)} ل.ل`;
-        } else {
-            return `$${extra.value.toFixed(2)} / ${this.app.formatNumber(extra.value)} ل.ل`;
-        }
-    }
-
     printInvoice() {
-        window.print();
+        const printContent = document.getElementById('invoice-preview').innerHTML;
+        const printWindow = window.open('', '_blank');
+        printWindow.document.write(`
+            <html>
+                <head>
+                    <title>فاتورة كهرباء</title>
+                    <style>
+                        body { font-family: 'Noto Kufi Arabic', Arial, sans-serif; direction: rtl; text-align: right; }
+                        .invoice-preview-content { max-width: 800px; margin: 0 auto; padding: 20px; }
+                        .invoice-header { text-align: center; margin-bottom: 30px; border-bottom: 2px solid #333; padding-bottom: 20px; }
+                        .invoice-details { margin-bottom: 20px; }
+                        .customer-info, .meter-info, .calculation-details { margin-bottom: 20px; }
+                        .calculation-row { display: flex; justify-content: space-between; margin: 5px 0; }
+                        .calculation-row.total { border-top: 1px solid #333; padding-top: 10px; font-weight: bold; }
+                        .calculation-row.discount { color: red; }
+                        .invoice-note { margin-top: 20px; padding: 10px; background: #f5f5f5; }
+                        @media print { body { margin: 0; } }
+                    </style>
+                </head>
+                <body>
+                    ${printContent}
+                </body>
+            </html>
+        `);
+        printWindow.document.close();
+        printWindow.print();
     }
 
     renderInvoices() {
         const container = document.getElementById('invoices-list');
         if (this.app.invoices.length === 0) {
-            container.innerHTML = '<div class="list-item"><p>لا يوجد وصولات</p></div>';
+            container.innerHTML = '<div class="list-item"><p>لا توجد فواتير</p></div>';
             return;
         }
 
         container.innerHTML = this.app.invoices.map(invoice => {
             const customer = this.app.customers.find(c => c.id === invoice.customerId);
-            const customerName = customer ? customer.name : 'مشترك محذوف';
-            
             return `
                 <div class="list-item">
                     <div class="list-item-info">
-                        <h4>${customerName}</h4>
+                        <h4>${customer ? customer.name : 'زبون محذوف'}</h4>
                         <p>📅 ${this.app.formatPeriod(invoice.period)}</p>
-                        <p>⚡ ${invoice.consumptionKwh.toFixed(2)} كيلو واط</p>
-                        <p>💰 ${this.app.formatCurrency(invoice.totalUsd, 'USD')} / ${this.app.formatCurrency(invoice.totalLbp, 'LBP')}</p>
+                        <p>🔢 الاستهلاك: ${invoice.consumptionKwh} كيلو واط</p>
+                        <p>💰 المجموع: ${this.app.formatCurrency(invoice.totalUsd, 'USD')}</p>
+                        <p>📄 رقم الفاتورة: ${invoice.id}</p>
                     </div>
                     <div class="list-item-actions">
-                        <button class="btn btn-secondary" onclick="app.invoiceManager.showInvoicePreview(${JSON.stringify(invoice).replace(/"/g, '&quot;')})">معاينة</button>
-                        <button class="btn btn-primary" onclick="app.invoiceManager.editInvoice('${invoice.id}')">تعديل</button>
+                        <button class="btn btn-secondary" onclick="app.invoiceManager.showInvoicePreview('${invoice.id}')">معاينة</button>
+                        <button class="btn btn-primary" onclick="app.invoiceManager.printInvoiceFromList('${invoice.id}')">طباعة</button>
                         <button class="btn btn-danger" onclick="app.invoiceManager.deleteInvoice('${invoice.id}')">حذف</button>
                     </div>
                 </div>
@@ -451,25 +437,34 @@ class InvoiceManager {
         }).join('');
     }
 
-    editInvoice(invoiceId) {
+    showInvoicePreview(invoiceId) {
         const invoice = this.app.invoices.find(i => i.id === invoiceId);
         if (invoice) {
-            this.showInvoiceModal(invoice);
+            this.showInvoicePreview(invoice);
+        }
+    }
+
+    printInvoiceFromList(invoiceId) {
+        const invoice = this.app.invoices.find(i => i.id === invoiceId);
+        if (invoice) {
+            this.showInvoicePreview(invoice);
+            setTimeout(() => {
+                this.printInvoice();
+            }, 500);
         }
     }
 
     async deleteInvoice(invoiceId) {
-        if (!confirm('هل أنت متأكد من حذف هذا الوصل؟')) return;
+        if (!confirm('هل أنت متأكد من حذف هذه الفاتورة؟')) return;
 
         try {
-            await firebase.deleteDoc(
-                firebase.doc(firebase.db, `tenants/${this.app.currentTenant.id}/invoices`, invoiceId)
-            );
-            this.app.showToast('تم حذف الوصل بنجاح', 'success');
+            this.app.invoices = this.app.invoices.filter(inv => inv.id !== invoiceId);
+            localStorage.setItem('invoices', JSON.stringify(this.app.invoices));
+            this.app.showToast('تم حذف الفاتورة بنجاح', 'success');
             await this.app.loadInvoices();
         } catch (error) {
-            console.error('خطأ في حذف الوصل:', error);
-            this.app.showToast('خطأ في حذف الوصل', 'error');
+            console.error('خطأ في حذف الفاتورة:', error);
+            this.app.showToast('خطأ في حذف الفاتورة', 'error');
         }
     }
 
@@ -478,15 +473,15 @@ class InvoiceManager {
         const customerFilter = document.getElementById('invoice-customer-filter').value;
         
         let filtered = this.app.invoices;
-        
+
         if (periodFilter) {
             filtered = filtered.filter(invoice => invoice.period === periodFilter);
         }
-        
+
         if (customerFilter) {
             filtered = filtered.filter(invoice => invoice.customerId === customerFilter);
         }
-        
+
         const container = document.getElementById('invoices-list');
         if (filtered.length === 0) {
             container.innerHTML = '<div class="list-item"><p>لا توجد نتائج</p></div>';
@@ -495,20 +490,99 @@ class InvoiceManager {
 
         container.innerHTML = filtered.map(invoice => {
             const customer = this.app.customers.find(c => c.id === invoice.customerId);
-            const customerName = customer ? customer.name : 'مشترك محذوف';
-            
             return `
                 <div class="list-item">
                     <div class="list-item-info">
-                        <h4>${customerName}</h4>
+                        <h4>${customer ? customer.name : 'زبون محذوف'}</h4>
                         <p>📅 ${this.app.formatPeriod(invoice.period)}</p>
-                        <p>⚡ ${invoice.consumptionKwh.toFixed(2)} كيلو واط</p>
-                        <p>💰 ${this.app.formatCurrency(invoice.totalUsd, 'USD')} / ${this.app.formatCurrency(invoice.totalLbp, 'LBP')}</p>
+                        <p>🔢 الاستهلاك: ${invoice.consumptionKwh} كيلو واط</p>
+                        <p>💰 المجموع: ${this.app.formatCurrency(invoice.totalUsd, 'USD')}</p>
+                        <p>📄 رقم الفاتورة: ${invoice.id}</p>
                     </div>
                     <div class="list-item-actions">
-                        <button class="btn btn-secondary" onclick="app.invoiceManager.showInvoicePreview(${JSON.stringify(invoice).replace(/"/g, '&quot;')})">معاينة</button>
-                        <button class="btn btn-primary" onclick="app.invoiceManager.editInvoice('${invoice.id}')">تعديل</button>
+                        <button class="btn btn-secondary" onclick="app.invoiceManager.showInvoicePreview('${invoice.id}')">معاينة</button>
+                        <button class="btn btn-primary" onclick="app.invoiceManager.printInvoiceFromList('${invoice.id}')">طباعة</button>
                         <button class="btn btn-danger" onclick="app.invoiceManager.deleteInvoice('${invoice.id}')">حذف</button>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    loadHistory() {
+        const container = document.getElementById('history-list');
+        if (this.app.invoices.length === 0) {
+            container.innerHTML = '<div class="list-item"><p>لا توجد سجلات</p></div>';
+            return;
+        }
+
+        // ترتيب الفواتير حسب التاريخ
+        const sortedInvoices = [...this.app.invoices].sort((a, b) => 
+            new Date(b.issuedAt) - new Date(a.issuedAt)
+        );
+
+        container.innerHTML = sortedInvoices.map(invoice => {
+            const customer = this.app.customers.find(c => c.id === invoice.customerId);
+            return `
+                <div class="list-item">
+                    <div class="list-item-info">
+                        <h4>${customer ? customer.name : 'زبون محذوف'}</h4>
+                        <p>📅 ${this.app.formatPeriod(invoice.period)} - ${new Date(invoice.issuedAt).toLocaleDateString('ar-LB')}</p>
+                        <p>🔢 الاستهلاك: ${invoice.consumptionKwh} كيلو واط</p>
+                        <p>💰 المجموع: ${this.app.formatCurrency(invoice.totalUsd, 'USD')}</p>
+                        <p>📄 رقم الفاتورة: ${invoice.id}</p>
+                    </div>
+                    <div class="list-item-actions">
+                        <button class="btn btn-secondary" onclick="app.invoiceManager.showInvoicePreview('${invoice.id}')">عرض</button>
+                        <button class="btn btn-primary" onclick="app.invoiceManager.printInvoiceFromList('${invoice.id}')">طباعة</button>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    filterHistory() {
+        const customerFilter = document.getElementById('history-customer-filter').value;
+        const yearFilter = document.getElementById('history-year-filter').value;
+        const monthFilter = document.getElementById('history-month-filter').value;
+        
+        let filtered = this.app.invoices;
+
+        if (customerFilter) {
+            filtered = filtered.filter(invoice => invoice.customerId === customerFilter);
+        }
+
+        if (yearFilter) {
+            filtered = filtered.filter(invoice => invoice.period.startsWith(yearFilter));
+        }
+
+        if (monthFilter) {
+            filtered = filtered.filter(invoice => invoice.period === monthFilter);
+        }
+
+        // ترتيب حسب التاريخ
+        filtered = filtered.sort((a, b) => new Date(b.issuedAt) - new Date(a.issuedAt));
+
+        const container = document.getElementById('history-list');
+        if (filtered.length === 0) {
+            container.innerHTML = '<div class="list-item"><p>لا توجد نتائج</p></div>';
+            return;
+        }
+
+        container.innerHTML = filtered.map(invoice => {
+            const customer = this.app.customers.find(c => c.id === invoice.customerId);
+            return `
+                <div class="list-item">
+                    <div class="list-item-info">
+                        <h4>${customer ? customer.name : 'زبون محذوف'}</h4>
+                        <p>📅 ${this.app.formatPeriod(invoice.period)} - ${new Date(invoice.issuedAt).toLocaleDateString('ar-LB')}</p>
+                        <p>🔢 الاستهلاك: ${invoice.consumptionKwh} كيلو واط</p>
+                        <p>💰 المجموع: ${this.app.formatCurrency(invoice.totalUsd, 'USD')}</p>
+                        <p>📄 رقم الفاتورة: ${invoice.id}</p>
+                    </div>
+                    <div class="list-item-actions">
+                        <button class="btn btn-secondary" onclick="app.invoiceManager.showInvoicePreview('${invoice.id}')">عرض</button>
+                        <button class="btn btn-primary" onclick="app.invoiceManager.printInvoiceFromList('${invoice.id}')">طباعة</button>
                     </div>
                 </div>
             `;
@@ -522,4 +596,3 @@ document.addEventListener('DOMContentLoaded', () => {
         window.app.invoiceManager = new InvoiceManager(window.app);
     }
 });
-

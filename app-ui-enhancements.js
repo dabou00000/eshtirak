@@ -1,113 +1,129 @@
-// تحسينات الواجهة والتفاعل
+// تحسينات الواجهة
 class UIEnhancements {
     constructor(app) {
         this.app = app;
-        this.setupEnhancements();
+        this.init();
     }
 
-    setupEnhancements() {
-        this.setupKeyboardShortcuts();
-        this.setupAutoSave();
+    init() {
         this.setupFormValidation();
-        this.setupLoadingStates();
-        this.setupTooltips();
+        this.setupAutoSave();
+        this.setupKeyboardShortcuts();
+        this.setupPrintStyles();
+        this.setupResponsiveDesign();
     }
 
-    setupKeyboardShortcuts() {
-        document.addEventListener('keydown', (e) => {
-            // Ctrl/Cmd + S لحفظ النماذج
-            if ((e.ctrlKey || e.metaKey) && e.key === 's') {
-                e.preventDefault();
-                this.handleSaveShortcut();
-            }
-            
-            // Escape لإغلاق النوافذ المنبثقة
-            if (e.key === 'Escape') {
-                this.closeAllModals();
-            }
-            
-            // Enter في حقول البحث للبحث الفوري
-            if (e.key === 'Enter' && e.target.matches('input[type="search"], input[placeholder*="بحث"]')) {
-                e.preventDefault();
-                this.handleSearchEnter(e.target);
-            }
+    setupFormValidation() {
+        // التحقق من صحة النماذج
+        const forms = document.querySelectorAll('form');
+        forms.forEach(form => {
+            form.addEventListener('submit', (e) => {
+                if (!this.validateForm(form)) {
+                    e.preventDefault();
+                }
+            });
         });
-    }
 
-    handleSaveShortcut() {
-        const activeModal = document.querySelector('.modal.active');
-        if (activeModal) {
-            const form = activeModal.querySelector('form');
-            if (form) {
-                form.dispatchEvent(new Event('submit'));
-            }
-        }
-    }
-
-    closeAllModals() {
-        document.querySelectorAll('.modal.active').forEach(modal => {
-            modal.classList.remove('active');
-        });
-    }
-
-    handleSearchEnter(searchInput) {
-        const searchValue = searchInput.value.trim();
-        if (searchValue) {
-            // تنفيذ البحث حسب السياق
-            if (searchInput.id === 'customer-search') {
-                this.app.filterCustomers(searchValue);
-            }
-        }
-    }
-
-    setupAutoSave() {
-        // حفظ تلقائي للإعدادات عند التغيير
-        const settingsInputs = document.querySelectorAll('#settings-form input, #settings-form select');
-        settingsInputs.forEach(input => {
-            input.addEventListener('change', () => {
-                this.debounce(() => {
-                    this.autoSaveSettings();
-                }, 2000)();
+        // التحقق من صحة الحقول في الوقت الفعلي
+        const inputs = document.querySelectorAll('input[required], select[required]');
+        inputs.forEach(input => {
+            input.addEventListener('blur', () => {
+                this.validateField(input);
             });
         });
     }
 
-    debounce(func, wait) {
-        let timeout;
-        return function executedFunction(...args) {
-            const later = () => {
-                clearTimeout(timeout);
-                func(...args);
-            };
-            clearTimeout(timeout);
-            timeout = setTimeout(later, wait);
-        };
+    validateForm(form) {
+        let isValid = true;
+        const requiredFields = form.querySelectorAll('[required]');
+        
+        requiredFields.forEach(field => {
+            if (!this.validateField(field)) {
+                isValid = false;
+            }
+        });
+
+        return isValid;
     }
 
-    async autoSaveSettings() {
-        try {
-            const settingsData = {
-                name: document.getElementById('tenant-name-input').value,
-                address: document.getElementById('tenant-address').value,
-                phone: document.getElementById('tenant-phone').value,
-                defaultCurrencyMode: document.getElementById('default-currency').value,
-                exchangeRate: parseFloat(document.getElementById('exchange-rate').value),
-                lbpRounding: parseInt(document.getElementById('lbp-rounding').value),
-                printTemplate: document.getElementById('print-template').value,
-                updatedAt: firebase.serverTimestamp()
-            };
+    validateField(field) {
+        const value = field.value.trim();
+        const fieldName = field.getAttribute('name') || field.id;
+        
+        // إزالة رسائل الخطأ السابقة
+        this.removeFieldError(field);
 
-            await firebase.updateDoc(
-                firebase.doc(firebase.db, 'tenants', this.app.currentTenant.id),
-                settingsData
-            );
-
-            this.app.settings = { ...this.app.settings, ...settingsData };
-            this.app.updateTenantName();
-            this.showAutoSaveIndicator();
-        } catch (error) {
-            console.error('خطأ في الحفظ التلقائي:', error);
+        if (field.hasAttribute('required') && !value) {
+            this.showFieldError(field, 'هذا الحقل مطلوب');
+            return false;
         }
+
+        // التحقق من صحة الإيميل
+        if (field.type === 'email' && value) {
+            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+            if (!emailRegex.test(value)) {
+                this.showFieldError(field, 'يرجى إدخال بريد إلكتروني صحيح');
+                return false;
+            }
+        }
+
+        // التحقق من صحة الأرقام
+        if (field.type === 'number' && value) {
+            const num = parseFloat(value);
+            if (isNaN(num)) {
+                this.showFieldError(field, 'يرجى إدخال رقم صحيح');
+                return false;
+            }
+            
+            if (field.hasAttribute('min') && num < parseFloat(field.getAttribute('min'))) {
+                this.showFieldError(field, `القيمة يجب أن تكون أكبر من أو تساوي ${field.getAttribute('min')}`);
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    showFieldError(field, message) {
+        field.classList.add('error');
+        
+        const errorDiv = document.createElement('div');
+        errorDiv.className = 'field-error';
+        errorDiv.textContent = message;
+        
+        field.parentNode.appendChild(errorDiv);
+    }
+
+    removeFieldError(field) {
+        field.classList.remove('error');
+        const existingError = field.parentNode.querySelector('.field-error');
+        if (existingError) {
+            existingError.remove();
+        }
+    }
+
+    setupAutoSave() {
+        // حفظ تلقائي للإعدادات
+        const settingsForm = document.getElementById('settings-form');
+        if (settingsForm) {
+            const inputs = settingsForm.querySelectorAll('input, select');
+            inputs.forEach(input => {
+                input.addEventListener('change', () => {
+                    this.autoSaveSettings();
+                });
+            });
+        }
+    }
+
+    autoSaveSettings() {
+        // حفظ الإعدادات تلقائياً بعد 2 ثانية من آخر تغيير
+        clearTimeout(this.autoSaveTimeout);
+        this.autoSaveTimeout = setTimeout(() => {
+            if (this.app && this.app.saveSettings) {
+                this.app.saveSettings();
+                this.showAutoSaveIndicator();
+            }
+        }, 2000);
     }
 
     showAutoSaveIndicator() {
@@ -122,7 +138,7 @@ class UIEnhancements {
             color: white;
             padding: 8px 16px;
             border-radius: 4px;
-            font-size: 12px;
+            font-size: 14px;
             z-index: 1000;
             opacity: 0;
             transition: opacity 0.3s;
@@ -139,275 +155,351 @@ class UIEnhancements {
         setTimeout(() => {
             indicator.style.opacity = '0';
             setTimeout(() => {
-                document.body.removeChild(indicator);
+                indicator.remove();
             }, 300);
         }, 2000);
     }
 
-    setupFormValidation() {
-        // التحقق من صحة البيانات في الوقت الفعلي
-        this.setupNumberValidation();
-        this.setupEmailValidation();
-        this.setupRequiredFieldValidation();
-    }
-
-    setupNumberValidation() {
-        const numberInputs = document.querySelectorAll('input[type="number"]');
-        numberInputs.forEach(input => {
-            input.addEventListener('input', (e) => {
-                const value = parseFloat(e.target.value);
-                const min = parseFloat(e.target.min);
-                const max = parseFloat(e.target.max);
-                
-                if (isNaN(value) || (min && value < min) || (max && value > max)) {
-                    e.target.classList.add('invalid');
-                    this.showFieldError(e.target, 'قيمة غير صحيحة');
-                } else {
-                    e.target.classList.remove('invalid');
-                    this.hideFieldError(e.target);
-                }
-            });
-        });
-    }
-
-    setupEmailValidation() {
-        const emailInputs = document.querySelectorAll('input[type="email"]');
-        emailInputs.forEach(input => {
-            input.addEventListener('blur', (e) => {
-                const email = e.target.value;
-                const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-                
-                if (email && !emailRegex.test(email)) {
-                    e.target.classList.add('invalid');
-                    this.showFieldError(e.target, 'البريد الإلكتروني غير صحيح');
-                } else {
-                    e.target.classList.remove('invalid');
-                    this.hideFieldError(e.target);
-                }
-            });
-        });
-    }
-
-    setupRequiredFieldValidation() {
-        const requiredInputs = document.querySelectorAll('input[required], select[required]');
-        requiredInputs.forEach(input => {
-            input.addEventListener('blur', (e) => {
-                if (!e.target.value.trim()) {
-                    e.target.classList.add('invalid');
-                    this.showFieldError(e.target, 'هذا الحقل مطلوب');
-                } else {
-                    e.target.classList.remove('invalid');
-                    this.hideFieldError(e.target);
-                }
-            });
-        });
-    }
-
-    showFieldError(field, message) {
-        this.hideFieldError(field);
-        
-        const errorDiv = document.createElement('div');
-        errorDiv.className = 'field-error';
-        errorDiv.textContent = message;
-        errorDiv.style.cssText = `
-            color: #e74c3c;
-            font-size: 12px;
-            margin-top: 4px;
-            display: block;
-        `;
-        
-        field.parentNode.appendChild(errorDiv);
-    }
-
-    hideFieldError(field) {
-        const existingError = field.parentNode.querySelector('.field-error');
-        if (existingError) {
-            existingError.remove();
-        }
-    }
-
-    setupLoadingStates() {
-        // إضافة حالات التحميل للأزرار
-        this.setupButtonLoading();
-        this.setupFormLoading();
-    }
-
-    setupButtonLoading() {
-        document.addEventListener('click', (e) => {
-            if (e.target.matches('.btn[type="submit"]')) {
-                this.showButtonLoading(e.target);
-            }
-        });
-    }
-
-    showButtonLoading(button) {
-        const originalText = button.textContent;
-        button.dataset.originalText = originalText;
-        button.textContent = 'جاري الحفظ...';
-        button.disabled = true;
-        button.style.opacity = '0.7';
-        
-        // إعادة تعيين الحالة بعد 5 ثوانٍ كحد أقصى
-        setTimeout(() => {
-            this.hideButtonLoading(button);
-        }, 5000);
-    }
-
-    hideButtonLoading(button) {
-        if (button.dataset.originalText) {
-            button.textContent = button.dataset.originalText;
-            delete button.dataset.originalText;
-        }
-        button.disabled = false;
-        button.style.opacity = '1';
-    }
-
-    setupFormLoading() {
-        document.addEventListener('submit', (e) => {
-            const form = e.target;
-            const submitButton = form.querySelector('button[type="submit"]');
-            if (submitButton) {
-                this.showButtonLoading(submitButton);
-            }
-        });
-    }
-
-    setupTooltips() {
-        // إضافة تلميحات للمساعدة
-        this.addTooltips();
-    }
-
-    addTooltips() {
-        const tooltipElements = [
-            {
-                selector: '#exchange-rate',
-                text: 'سعر الصرف الحالي للدولار مقابل الليرة اللبنانية'
-            },
-            {
-                selector: '#lbp-rounding',
-                text: 'تقريب المبالغ بالليرة لأقرب 100 أو 1000'
-            },
-            {
-                selector: '#print-template',
-                text: 'اختر قالب الطباعة المناسب لطابعتك'
-            },
-            {
-                selector: '#pricing-mode',
-                text: 'اختر العملة الأساسية للتسعير في هذا الوصل'
-            }
-        ];
-
-        tooltipElements.forEach(({ selector, text }) => {
-            const element = document.querySelector(selector);
-            if (element) {
-                element.title = text;
-                this.addTooltipIcon(element, text);
-            }
-        });
-    }
-
-    addTooltipIcon(element, text) {
-        const icon = document.createElement('span');
-        icon.innerHTML = '❓';
-        icon.className = 'tooltip-icon';
-        icon.style.cssText = `
-            margin-right: 5px;
-            cursor: help;
-            color: #3498db;
-            font-size: 12px;
-        `;
-        icon.title = text;
-        
-        element.parentNode.insertBefore(icon, element);
-    }
-
-    // وظائف مساعدة إضافية
-    formatCurrencyInput(input) {
-        input.addEventListener('input', (e) => {
-            const value = e.target.value;
-            if (value && !isNaN(value)) {
-                const formatted = this.app.formatNumber(parseFloat(value));
-                e.target.dataset.formatted = formatted;
-            }
-        });
-    }
-
-    setupQuickActions() {
-        // إضافة أزرار سريعة
-        this.addQuickActionButtons();
-    }
-
-    addQuickActionButtons() {
-        // زر سريع لإضافة مشترك
-        const addCustomerBtn = document.getElementById('add-customer-btn');
-        if (addCustomerBtn) {
-            addCustomerBtn.addEventListener('contextmenu', (e) => {
+    setupKeyboardShortcuts() {
+        document.addEventListener('keydown', (e) => {
+            // Ctrl + S لحفظ الإعدادات
+            if (e.ctrlKey && e.key === 's') {
                 e.preventDefault();
-                this.showQuickCustomerForm();
-            });
-        }
+                const activePanel = document.querySelector('.tab-panel.active');
+                if (activePanel && activePanel.id === 'settings-tab') {
+                    const settingsForm = document.getElementById('settings-form');
+                    if (settingsForm) {
+                        settingsForm.dispatchEvent(new Event('submit'));
+                    }
+                }
+            }
+
+            // Ctrl + N لإضافة عنصر جديد
+            if (e.ctrlKey && e.key === 'n') {
+                e.preventDefault();
+                const activePanel = document.querySelector('.tab-panel.active');
+                if (activePanel) {
+                    const addButton = activePanel.querySelector('.btn-primary');
+                    if (addButton) {
+                        addButton.click();
+                    }
+                }
+            }
+
+            // Escape لإغلاق النوافذ المنبثقة
+            if (e.key === 'Escape') {
+                const activeModal = document.querySelector('.modal.active');
+                if (activeModal) {
+                    const closeBtn = activeModal.querySelector('.close-btn');
+                    if (closeBtn) {
+                        closeBtn.click();
+                    }
+                }
+            }
+        });
     }
 
-    showQuickCustomerForm() {
-        const name = prompt('اسم المشترك:');
-        if (name) {
-            const phone = prompt('رقم الهاتف (اختياري):');
-            const address = prompt('العنوان (اختياري):');
-            
-            // إضافة المشترك مباشرة
-            this.quickAddCustomer({ name, phone, address });
-        }
+    setupPrintStyles() {
+        // إضافة أنماط الطباعة
+        const printStyles = `
+            @media print {
+                body * {
+                    visibility: hidden;
+                }
+                .invoice-preview-content,
+                .invoice-preview-content * {
+                    visibility: visible;
+                }
+                .invoice-preview-content {
+                    position: absolute;
+                    left: 0;
+                    top: 0;
+                    width: 100%;
+                }
+                .print-actions {
+                    display: none !important;
+                }
+            }
+        `;
+
+        const styleSheet = document.createElement('style');
+        styleSheet.textContent = printStyles;
+        document.head.appendChild(styleSheet);
     }
 
-    async quickAddCustomer(customerData) {
-        try {
-            const data = {
-                ...customerData,
-                createdAt: firebase.serverTimestamp(),
-                updatedAt: firebase.serverTimestamp()
-            };
-
-            await firebase.addDoc(
-                firebase.collection(firebase.db, `tenants/${this.app.currentTenant.id}/customers`),
-                data
-            );
-
-            this.app.showToast('تم إضافة المشترك بنجاح', 'success');
-            await this.app.loadCustomers();
-        } catch (error) {
-            console.error('خطأ في إضافة المشترك:', error);
-            this.app.showToast('خطأ في إضافة المشترك', 'error');
-        }
+    setupResponsiveDesign() {
+        // تحسين التصميم للشاشات الصغيرة
+        this.setupMobileNavigation();
+        this.setupTouchGestures();
     }
 
-    // تحسينات للعرض على الشاشات الصغيرة
-    setupMobileOptimizations() {
+    setupMobileNavigation() {
+        // إضافة قائمة تنقل للهواتف
         if (window.innerWidth <= 768) {
-            this.optimizeForMobile();
+            this.createMobileMenu();
+        }
+
+        window.addEventListener('resize', () => {
+            if (window.innerWidth <= 768) {
+                this.createMobileMenu();
+            } else {
+                this.removeMobileMenu();
+            }
+        });
+    }
+
+    createMobileMenu() {
+        if (document.getElementById('mobile-menu')) return;
+
+        const mobileMenu = document.createElement('div');
+        mobileMenu.id = 'mobile-menu';
+        mobileMenu.innerHTML = `
+            <button id="mobile-menu-toggle" class="mobile-menu-toggle">
+                <span></span>
+                <span></span>
+                <span></span>
+            </button>
+            <div id="mobile-menu-content" class="mobile-menu-content">
+                <div class="mobile-tabs"></div>
+            </div>
+        `;
+
+        mobileMenu.style.cssText = `
+            position: fixed;
+            top: 0;
+            right: 0;
+            z-index: 1000;
+            background: white;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        `;
+
+        document.body.appendChild(mobileMenu);
+
+        // نسخ التبويبات إلى القائمة المحمولة
+        const tabs = document.querySelectorAll('.tab-btn');
+        const mobileTabs = mobileMenu.querySelector('.mobile-tabs');
+        
+        tabs.forEach(tab => {
+            const mobileTab = tab.cloneNode(true);
+            mobileTab.addEventListener('click', () => {
+                tab.click();
+                this.closeMobileMenu();
+            });
+            mobileTabs.appendChild(mobileTab);
+        });
+
+        // إضافة أحداث القائمة
+        const toggle = mobileMenu.querySelector('#mobile-menu-toggle');
+        const content = mobileMenu.querySelector('#mobile-menu-content');
+        
+        toggle.addEventListener('click', () => {
+            content.classList.toggle('active');
+        });
+    }
+
+    removeMobileMenu() {
+        const mobileMenu = document.getElementById('mobile-menu');
+        if (mobileMenu) {
+            mobileMenu.remove();
         }
     }
 
-    optimizeForMobile() {
-        // تحسين النوافذ المنبثقة للهواتف
-        const modals = document.querySelectorAll('.modal-content');
-        modals.forEach(modal => {
-            modal.style.maxHeight = '90vh';
-            modal.style.overflowY = 'auto';
+    closeMobileMenu() {
+        const content = document.getElementById('mobile-menu-content');
+        if (content) {
+            content.classList.remove('active');
+        }
+    }
+
+    setupTouchGestures() {
+        // إضافة إيماءات اللمس للهواتف
+        let startX = 0;
+        let startY = 0;
+
+        document.addEventListener('touchstart', (e) => {
+            startX = e.touches[0].clientX;
+            startY = e.touches[0].clientY;
         });
 
-        // تحسين الجداول للهواتف
-        const tables = document.querySelectorAll('table');
-        tables.forEach(table => {
-            table.style.fontSize = '12px';
+        document.addEventListener('touchend', (e) => {
+            if (!startX || !startY) return;
+
+            const endX = e.changedTouches[0].clientX;
+            const endY = e.changedTouches[0].clientY;
+
+            const diffX = startX - endX;
+            const diffY = startY - endY;
+
+            // تجاهل الحركات الصغيرة
+            if (Math.abs(diffX) < 50 && Math.abs(diffY) < 50) return;
+
+            // حركة أفقية (تغيير التبويبات)
+            if (Math.abs(diffX) > Math.abs(diffY)) {
+                if (diffX > 0) {
+                    this.switchToNextTab();
+                } else {
+                    this.switchToPreviousTab();
+                }
+            }
+
+            startX = 0;
+            startY = 0;
         });
+    }
+
+    switchToNextTab() {
+        const activeTab = document.querySelector('.tab-btn.active');
+        const tabs = Array.from(document.querySelectorAll('.tab-btn'));
+        const currentIndex = tabs.indexOf(activeTab);
+        const nextIndex = (currentIndex + 1) % tabs.length;
+        tabs[nextIndex].click();
+    }
+
+    switchToPreviousTab() {
+        const activeTab = document.querySelector('.tab-btn.active');
+        const tabs = Array.from(document.querySelectorAll('.tab-btn'));
+        const currentIndex = tabs.indexOf(activeTab);
+        const prevIndex = currentIndex === 0 ? tabs.length - 1 : currentIndex - 1;
+        tabs[prevIndex].click();
+    }
+
+    // وظائف مساعدة
+    showLoading(element) {
+        const originalContent = element.innerHTML;
+        element.innerHTML = '<div class="loading-spinner">جاري التحميل...</div>';
+        element.dataset.originalContent = originalContent;
+    }
+
+    hideLoading(element) {
+        if (element.dataset.originalContent) {
+            element.innerHTML = element.dataset.originalContent;
+            delete element.dataset.originalContent;
+        }
+    }
+
+    formatDate(date) {
+        return new Date(date).toLocaleDateString('ar-LB', {
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric'
+        });
+    }
+
+    formatTime(date) {
+        return new Date(date).toLocaleTimeString('ar-LB', {
+            hour: '2-digit',
+            minute: '2-digit'
+        });
+    }
+
+    // تحسين الأداء
+    debounce(func, wait) {
+        let timeout;
+        return function executedFunction(...args) {
+            const later = () => {
+                clearTimeout(timeout);
+                func(...args);
+            };
+            clearTimeout(timeout);
+            timeout = setTimeout(later, wait);
+        };
+    }
+
+    throttle(func, limit) {
+        let inThrottle;
+        return function() {
+            const args = arguments;
+            const context = this;
+            if (!inThrottle) {
+                func.apply(context, args);
+                inThrottle = true;
+                setTimeout(() => inThrottle = false, limit);
+            }
+        };
     }
 }
 
-// إضافة UIEnhancements إلى التطبيق الرئيسي
+// إضافة CSS للتحسينات
+const enhancementStyles = `
+    .field-error {
+        color: #e74c3c;
+        font-size: 12px;
+        margin-top: 5px;
+    }
+
+    .error {
+        border-color: #e74c3c !important;
+        box-shadow: 0 0 0 2px rgba(231, 76, 60, 0.2) !important;
+    }
+
+    .loading-spinner {
+        text-align: center;
+        padding: 20px;
+        color: #666;
+    }
+
+    .mobile-menu-toggle {
+        background: none;
+        border: none;
+        padding: 10px;
+        cursor: pointer;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+    }
+
+    .mobile-menu-toggle span {
+        width: 25px;
+        height: 3px;
+        background: #333;
+        transition: 0.3s;
+    }
+
+    .mobile-menu-content {
+        position: absolute;
+        top: 100%;
+        right: 0;
+        background: white;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        max-height: 0;
+        overflow: hidden;
+        transition: max-height 0.3s;
+    }
+
+    .mobile-menu-content.active {
+        max-height: 400px;
+    }
+
+    .mobile-tabs {
+        padding: 10px;
+    }
+
+    .mobile-tabs .tab-btn {
+        display: block;
+        width: 100%;
+        text-align: right;
+        border: none;
+        background: none;
+        padding: 15px;
+        border-bottom: 1px solid #eee;
+    }
+
+    @media (min-width: 769px) {
+        .mobile-menu-toggle,
+        .mobile-menu-content {
+            display: none;
+        }
+    }
+`;
+
+// إضافة الأنماط
+const styleSheet = document.createElement('style');
+styleSheet.textContent = enhancementStyles;
+document.head.appendChild(styleSheet);
+
+// تهيئة التحسينات
 document.addEventListener('DOMContentLoaded', () => {
     if (window.app) {
         window.app.uiEnhancements = new UIEnhancements(window.app);
     }
 });
-
-

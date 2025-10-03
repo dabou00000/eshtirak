@@ -1,4 +1,4 @@
-// وظائف النفقات والتقارير
+// وظائف المصاريف والتقارير
 class ExpensesReportsManager {
     constructor(app) {
         this.app = app;
@@ -31,17 +31,14 @@ class ExpensesReportsManager {
     }
 
     updateExpenseType(type) {
-        const labelGroup = document.getElementById('expense-label-group');
         const labelInput = document.getElementById('expense-label');
         
         if (type === 'DIESEL') {
-            labelGroup.style.display = 'none';
             labelInput.value = 'ثمن مازوت';
+        } else if (type === 'MAINTENANCE') {
+            labelInput.value = 'صيانة المولد';
         } else {
-            labelGroup.style.display = 'block';
-            if (labelInput.value === 'ثمن مازوت') {
-                labelInput.value = '';
-            }
+            labelInput.value = '';
         }
     }
 
@@ -54,40 +51,41 @@ class ExpensesReportsManager {
                        (document.getElementById('expense-type').value === 'DIESEL' ? 'ثمن مازوت' : ''),
                 amountValue: parseFloat(document.getElementById('expense-amount').value),
                 amountCurrency: document.getElementById('expense-currency').value,
-                createdAt: firebase.serverTimestamp()
+                createdAt: new Date().toISOString()
             };
 
             const form = document.getElementById('expense-form');
             const expenseId = form.dataset.expenseId;
 
             if (expenseId) {
-                // تعديل نفقة موجودة
-                await firebase.updateDoc(
-                    firebase.doc(firebase.db, `tenants/${this.app.currentTenant.id}/expenses`, expenseId),
-                    expenseData
-                );
-                this.app.showToast('تم تعديل النفقة بنجاح', 'success');
+                // تعديل مصروف موجود
+                const index = this.app.expenses.findIndex(exp => exp.id === expenseId);
+                if (index !== -1) {
+                    this.app.expenses[index] = { ...this.app.expenses[index], ...expenseData };
+                }
+                this.app.showToast('تم تعديل المصروف بنجاح', 'success');
             } else {
-                // إضافة نفقة جديدة
-                await firebase.addDoc(
-                    firebase.collection(firebase.db, `tenants/${this.app.currentTenant.id}/expenses`),
-                    expenseData
-                );
-                this.app.showToast('تم إضافة النفقة بنجاح', 'success');
+                // إضافة مصروف جديد
+                expenseData.id = 'expense_' + Date.now();
+                this.app.expenses.push(expenseData);
+                this.app.showToast('تم إضافة المصروف بنجاح', 'success');
             }
+
+            // حفظ في LocalStorage
+            localStorage.setItem('expenses', JSON.stringify(this.app.expenses));
 
             this.app.closeModal(document.getElementById('expense-modal'));
             await this.app.loadExpenses();
         } catch (error) {
-            console.error('خطأ في حفظ النفقة:', error);
-            this.app.showToast('خطأ في حفظ النفقة', 'error');
+            console.error('خطأ في حفظ المصروف:', error);
+            this.app.showToast('خطأ في حفظ المصروف', 'error');
         }
     }
 
     renderExpenses() {
         const container = document.getElementById('expenses-list');
         if (this.app.expenses.length === 0) {
-            container.innerHTML = '<div class="list-item"><p>لا يوجد نفقات</p></div>';
+            container.innerHTML = '<div class="list-item"><p>لا توجد مصاريف</p></div>';
             return;
         }
 
@@ -96,15 +94,24 @@ class ExpensesReportsManager {
                 <div class="list-item-info">
                     <h4>${expense.label}</h4>
                     <p>📅 ${this.app.formatPeriod(expense.period)}</p>
-                    <p>🏷️ ${expense.type === 'DIESEL' ? 'ثمن مازوت' : 'أخرى'}</p>
+                    <p>🏷️ ${this.getExpenseTypeLabel(expense.type)}</p>
                     <p>💰 ${this.app.formatCurrency(expense.amountValue, expense.amountCurrency)}</p>
                 </div>
                 <div class="list-item-actions">
-                    <button class="btn btn-primary" onclick="app.expensesManager.editExpense('${expense.id}')">تعديل</button>
+                    <button class="btn btn-secondary" onclick="app.expensesManager.editExpense('${expense.id}')">تعديل</button>
                     <button class="btn btn-danger" onclick="app.expensesManager.deleteExpense('${expense.id}')">حذف</button>
                 </div>
             </div>
         `).join('');
+    }
+
+    getExpenseTypeLabel(type) {
+        const labels = {
+            'DIESEL': 'مازوت',
+            'MAINTENANCE': 'صيانة',
+            'OTHER': 'أخرى'
+        };
+        return labels[type] || type;
     }
 
     editExpense(expenseId) {
@@ -115,29 +122,33 @@ class ExpensesReportsManager {
     }
 
     async deleteExpense(expenseId) {
-        if (!confirm('هل أنت متأكد من حذف هذه النفقة؟')) return;
+        if (!confirm('هل أنت متأكد من حذف هذا المصروف؟')) return;
 
         try {
-            await firebase.deleteDoc(
-                firebase.doc(firebase.db, `tenants/${this.app.currentTenant.id}/expenses`, expenseId)
-            );
-            this.app.showToast('تم حذف النفقة بنجاح', 'success');
+            this.app.expenses = this.app.expenses.filter(exp => exp.id !== expenseId);
+            localStorage.setItem('expenses', JSON.stringify(this.app.expenses));
+            this.app.showToast('تم حذف المصروف بنجاح', 'success');
             await this.app.loadExpenses();
         } catch (error) {
-            console.error('خطأ في حذف النفقة:', error);
-            this.app.showToast('خطأ في حذف النفقة', 'error');
+            console.error('خطأ في حذف المصروف:', error);
+            this.app.showToast('خطأ في حذف المصروف', 'error');
         }
     }
 
     filterExpenses() {
         const periodFilter = document.getElementById('expense-period-filter').value;
+        const typeFilter = document.getElementById('expense-type-filter').value;
         
         let filtered = this.app.expenses;
-        
+
         if (periodFilter) {
             filtered = filtered.filter(expense => expense.period === periodFilter);
         }
-        
+
+        if (typeFilter) {
+            filtered = filtered.filter(expense => expense.type === typeFilter);
+        }
+
         const container = document.getElementById('expenses-list');
         if (filtered.length === 0) {
             container.innerHTML = '<div class="list-item"><p>لا توجد نتائج</p></div>';
@@ -149,36 +160,155 @@ class ExpensesReportsManager {
                 <div class="list-item-info">
                     <h4>${expense.label}</h4>
                     <p>📅 ${this.app.formatPeriod(expense.period)}</p>
-                    <p>🏷️ ${expense.type === 'DIESEL' ? 'ثمن مازوت' : 'أخرى'}</p>
+                    <p>🏷️ ${this.getExpenseTypeLabel(expense.type)}</p>
                     <p>💰 ${this.app.formatCurrency(expense.amountValue, expense.amountCurrency)}</p>
                 </div>
                 <div class="list-item-actions">
-                    <button class="btn btn-primary" onclick="app.expensesManager.editExpense('${expense.id}')">تعديل</button>
+                    <button class="btn btn-secondary" onclick="app.expensesManager.editExpense('${expense.id}')">تعديل</button>
                     <button class="btn btn-danger" onclick="app.expensesManager.deleteExpense('${expense.id}')">حذف</button>
                 </div>
             </div>
         `).join('');
     }
 
-    async generateReport() {
-        const period = document.getElementById('report-period').value;
-        if (!period) {
-            this.app.showToast('يرجى اختيار الشهر', 'warning');
+    generateReport() {
+        const year = document.getElementById('report-year').value;
+        const month = document.getElementById('report-month').value;
+        
+        if (!year || !month) {
+            this.app.showToast('يرجى اختيار السنة والشهر', 'warning');
             return;
         }
 
+        const period = `${year}-${month}`;
+        this.generateMonthlyReport(period);
+    }
+
+    generateMonthlyReport(period) {
         try {
-            // جمع بيانات الوصولات للشهر المحدد
+            // جمع بيانات الفواتير للشهر المحدد
             const periodInvoices = this.app.invoices.filter(invoice => invoice.period === period);
             
-            // جمع بيانات النفقات للشهر المحدد
+            // جمع بيانات المصاريف للشهر المحدد
             const periodExpenses = this.app.expenses.filter(expense => expense.period === period);
 
-            // حساب الإحصائيات
-            const stats = this.calculateReportStats(periodInvoices, periodExpenses);
+            // حساب المجاميع
+            const totalConsumption = periodInvoices.reduce((sum, invoice) => sum + invoice.consumptionKwh, 0);
+            const totalInvoicesUsd = periodInvoices.reduce((sum, invoice) => sum + invoice.totalUsd, 0);
+            const totalInvoicesLbp = periodInvoices.reduce((sum, invoice) => sum + invoice.totalLbp, 0);
+
+            // حساب المصاريف
+            const totalExpensesUsd = periodExpenses
+                .filter(exp => exp.amountCurrency === 'USD')
+                .reduce((sum, exp) => sum + exp.amountValue, 0);
             
+            const totalExpensesLbp = periodExpenses
+                .filter(exp => exp.amountCurrency === 'LBP')
+                .reduce((sum, exp) => sum + exp.amountValue, 0);
+
+            // حساب الصافي
+            const netUsd = totalInvoicesUsd - totalExpensesUsd;
+            const netLbp = totalInvoicesLbp - totalExpensesLbp;
+
             // عرض التقرير
-            this.displayReport(period, stats, periodInvoices, periodExpenses);
+            const reportContent = document.getElementById('report-content');
+            reportContent.innerHTML = `
+                <div class="report-container">
+                    <div class="report-header">
+                        <h3>تقرير شهري - ${this.app.formatPeriod(period)}</h3>
+                        <p>تاريخ التقرير: ${new Date().toLocaleDateString('ar-LB')}</p>
+                    </div>
+
+                    <div class="report-section">
+                        <h4>📊 إحصائيات الفواتير</h4>
+                        <div class="stats-grid">
+                            <div class="stat-item">
+                                <span class="stat-label">عدد الفواتير</span>
+                                <span class="stat-value">${periodInvoices.length}</span>
+                            </div>
+                            <div class="stat-item">
+                                <span class="stat-label">إجمالي الاستهلاك</span>
+                                <span class="stat-value">${totalConsumption.toFixed(2)} كيلو واط</span>
+                            </div>
+                            <div class="stat-item">
+                                <span class="stat-label">إجمالي الفواتير (USD)</span>
+                                <span class="stat-value">${this.app.formatCurrency(totalInvoicesUsd, 'USD')}</span>
+                            </div>
+                            <div class="stat-item">
+                                <span class="stat-label">إجمالي الفواتير (LBP)</span>
+                                <span class="stat-value">${this.app.formatCurrency(totalInvoicesLbp, 'LBP')}</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="report-section">
+                        <h4>💸 المصاريف</h4>
+                        <div class="stats-grid">
+                            <div class="stat-item">
+                                <span class="stat-label">عدد المصاريف</span>
+                                <span class="stat-value">${periodExpenses.length}</span>
+                            </div>
+                            <div class="stat-item">
+                                <span class="stat-label">إجمالي المصاريف (USD)</span>
+                                <span class="stat-value">${this.app.formatCurrency(totalExpensesUsd, 'USD')}</span>
+                            </div>
+                            <div class="stat-item">
+                                <span class="stat-label">إجمالي المصاريف (LBP)</span>
+                                <span class="stat-value">${this.app.formatCurrency(totalExpensesLbp, 'LBP')}</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="report-section">
+                        <h4>💰 النتيجة المالية</h4>
+                        <div class="financial-summary">
+                            <div class="financial-item ${netUsd >= 0 ? 'profit' : 'loss'}">
+                                <span class="financial-label">الصافي (USD)</span>
+                                <span class="financial-value">${this.app.formatCurrency(netUsd, 'USD')}</span>
+                            </div>
+                            <div class="financial-item ${netLbp >= 0 ? 'profit' : 'loss'}">
+                                <span class="financial-label">الصافي (LBP)</span>
+                                <span class="financial-value">${this.app.formatCurrency(netLbp, 'LBP')}</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="report-section">
+                        <h4>📋 تفاصيل الفواتير</h4>
+                        <div class="invoices-details">
+                            ${periodInvoices.length === 0 ? 
+                                '<p>لا توجد فواتير لهذا الشهر</p>' :
+                                periodInvoices.map(invoice => {
+                                    const customer = this.app.customers.find(c => c.id === invoice.customerId);
+                                    return `
+                                        <div class="invoice-detail">
+                                            <span>${customer ? customer.name : 'زبون محذوف'}</span>
+                                            <span>${invoice.consumptionKwh} كيلو واط</span>
+                                            <span>${this.app.formatCurrency(invoice.totalUsd, 'USD')}</span>
+                                        </div>
+                                    `;
+                                }).join('')
+                            }
+                        </div>
+                    </div>
+
+                    <div class="report-section">
+                        <h4>📋 تفاصيل المصاريف</h4>
+                        <div class="expenses-details">
+                            ${periodExpenses.length === 0 ? 
+                                '<p>لا توجد مصاريف لهذا الشهر</p>' :
+                                periodExpenses.map(expense => `
+                                    <div class="expense-detail">
+                                        <span>${expense.label}</span>
+                                        <span>${this.getExpenseTypeLabel(expense.type)}</span>
+                                        <span>${this.app.formatCurrency(expense.amountValue, expense.amountCurrency)}</span>
+                                    </div>
+                                `).join('')
+                            }
+                        </div>
+                    </div>
+                </div>
+            `;
 
         } catch (error) {
             console.error('خطأ في إنشاء التقرير:', error);
@@ -186,214 +316,60 @@ class ExpensesReportsManager {
         }
     }
 
-    calculateReportStats(invoices, expenses) {
-        // حساب إجمالي الوصولات
-        const totalInvoicesUsd = invoices.reduce((sum, invoice) => sum + invoice.totalUsd, 0);
-        const totalInvoicesLbp = invoices.reduce((sum, invoice) => sum + invoice.totalLbp, 0);
+    exportReport() {
+        const year = document.getElementById('report-year').value;
+        const month = document.getElementById('report-month').value;
         
-        // حساب إجمالي الاستهلاك
-        const totalConsumption = invoices.reduce((sum, invoice) => sum + invoice.consumptionKwh, 0);
-        
-        // حساب النفقات بالدولار والليرة
-        const expensesUsd = expenses
-            .filter(exp => exp.amountCurrency === 'USD')
-            .reduce((sum, exp) => sum + exp.amountValue, 0);
-        
-        const expensesLbp = expenses
-            .filter(exp => exp.amountCurrency === 'LBP')
-            .reduce((sum, exp) => sum + exp.amountValue, 0);
-        
-        // تحويل النفقات بالليرة إلى دولار (بسعر الصرف الحالي)
-        const exchangeRate = this.app.settings.exchangeRate || 90000;
-        const expensesUsdConverted = expensesLbp / exchangeRate;
-        const totalExpensesUsd = expensesUsd + expensesUsdConverted;
-        
-        // تحويل النفقات بالدولار إلى ليرة
-        const expensesLbpConverted = expensesUsd * exchangeRate;
-        const totalExpensesLbp = expensesLbp + expensesLbpConverted;
-        
-        // حساب الصافي
-        const netUsd = totalInvoicesUsd - totalExpensesUsd;
-        const netLbp = totalInvoicesLbp - totalExpensesLbp;
-
-        return {
-            totalInvoicesUsd,
-            totalInvoicesLbp,
-            totalConsumption,
-            expensesUsd,
-            expensesLbp,
-            totalExpensesUsd,
-            totalExpensesLbp,
-            netUsd,
-            netLbp,
-            invoiceCount: invoices.length,
-            expenseCount: expenses.length
-        };
-    }
-
-    displayReport(period, stats, invoices, expenses) {
-        const container = document.getElementById('report-content');
-        
-        container.innerHTML = `
-            <div class="report-header">
-                <h3>تقرير شهر ${this.app.formatPeriod(period)}</h3>
-                <p>تاريخ الإنشاء: ${new Date().toLocaleDateString('ar-LB')}</p>
-            </div>
-            
-            <div class="report-summary">
-                <div class="report-card">
-                    <h4>عدد الوصولات</h4>
-                    <div class="value">${stats.invoiceCount}</div>
-                </div>
-                <div class="report-card">
-                    <h4>إجمالي الاستهلاك</h4>
-                    <div class="value">${stats.totalConsumption.toFixed(2)} كيلو واط</div>
-                </div>
-                <div class="report-card">
-                    <h4>إجمالي الوصولات (USD)</h4>
-                    <div class="value">${this.app.formatCurrency(stats.totalInvoicesUsd, 'USD')}</div>
-                </div>
-                <div class="report-card">
-                    <h4>إجمالي الوصولات (LBP)</h4>
-                    <div class="value">${this.app.formatCurrency(stats.totalInvoicesLbp, 'LBP')}</div>
-                </div>
-                <div class="report-card">
-                    <h4>إجمالي النفقات (USD)</h4>
-                    <div class="value">${this.app.formatCurrency(stats.totalExpensesUsd, 'USD')}</div>
-                </div>
-                <div class="report-card">
-                    <h4>إجمالي النفقات (LBP)</h4>
-                    <div class="value">${this.app.formatCurrency(stats.totalExpensesLbp, 'LBP')}</div>
-                </div>
-                <div class="report-card">
-                    <h4>الصافي (USD)</h4>
-                    <div class="value ${stats.netUsd < 0 ? 'negative' : ''}">${this.app.formatCurrency(stats.netUsd, 'USD')}</div>
-                </div>
-                <div class="report-card">
-                    <h4>الصافي (LBP)</h4>
-                    <div class="value ${stats.netLbp < 0 ? 'negative' : ''}">${this.app.formatCurrency(stats.netLbp, 'LBP')}</div>
-                </div>
-            </div>
-            
-            <div class="report-details">
-                <h4>تفاصيل الوصولات</h4>
-                ${this.generateInvoicesTable(invoices)}
-            </div>
-            
-            <div class="report-details">
-                <h4>تفاصيل النفقات</h4>
-                ${this.generateExpensesTable(expenses)}
-            </div>
-            
-            <div class="report-actions">
-                <button class="btn btn-primary" onclick="app.expensesManager.exportReport('${period}')">تصدير CSV</button>
-            </div>
-        `;
-    }
-
-    generateInvoicesTable(invoices) {
-        if (invoices.length === 0) {
-            return '<p>لا توجد وصولات لهذا الشهر</p>';
+        if (!year || !month) {
+            this.app.showToast('يرجى اختيار السنة والشهر أولاً', 'warning');
+            return;
         }
 
-        const tableRows = invoices.map(invoice => {
-            const customer = this.app.customers.find(c => c.id === invoice.customerId);
-            const customerName = customer ? customer.name : 'مشترك محذوف';
-            
-            return `
-                <tr>
-                    <td>${customerName}</td>
-                    <td>${invoice.consumptionKwh.toFixed(2)}</td>
-                    <td>${this.app.formatCurrency(invoice.totalUsd, 'USD')}</td>
-                    <td>${this.app.formatCurrency(invoice.totalLbp, 'LBP')}</td>
-                </tr>
-            `;
-        }).join('');
-
-        return `
-            <table class="report-table">
-                <thead>
-                    <tr>
-                        <th>المشترك</th>
-                        <th>الاستهلاك (كيلو واط)</th>
-                        <th>المبلغ (USD)</th>
-                        <th>المبلغ (LBP)</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    ${tableRows}
-                </tbody>
-            </table>
-        `;
+        const period = `${year}-${month}`;
+        this.exportToExcel(period);
     }
 
-    generateExpensesTable(expenses) {
-        if (expenses.length === 0) {
-            return '<p>لا توجد نفقات لهذا الشهر</p>';
-        }
-
-        const tableRows = expenses.map(expense => `
-            <tr>
-                <td>${expense.label}</td>
-                <td>${expense.type === 'DIESEL' ? 'ثمن مازوت' : 'أخرى'}</td>
-                <td>${this.app.formatCurrency(expense.amountValue, expense.amountCurrency)}</td>
-            </tr>
-        `).join('');
-
-        return `
-            <table class="report-table">
-                <thead>
-                    <tr>
-                        <th>الوصف</th>
-                        <th>النوع</th>
-                        <th>المبلغ</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    ${tableRows}
-                </tbody>
-            </table>
-        `;
-    }
-
-    exportReport(period) {
+    exportToExcel(period) {
         try {
+            // جمع البيانات
             const periodInvoices = this.app.invoices.filter(invoice => invoice.period === period);
             const periodExpenses = this.app.expenses.filter(expense => expense.period === period);
-            const stats = this.calculateReportStats(periodInvoices, periodExpenses);
 
-            // إنشاء بيانات CSV
-            let csvContent = 'تقرير شهر ' + this.app.formatPeriod(period) + '\n\n';
+            // إنشاء CSV
+            let csvContent = '\uFEFF'; // BOM for UTF-8
             
-            // إحصائيات عامة
-            csvContent += 'الإحصائيات العامة\n';
-            csvContent += 'عدد الوصولات,' + stats.invoiceCount + '\n';
-            csvContent += 'إجمالي الاستهلاك (كيلو واط),' + stats.totalConsumption.toFixed(2) + '\n';
-            csvContent += 'إجمالي الوصولات (USD),' + stats.totalInvoicesUsd.toFixed(2) + '\n';
-            csvContent += 'إجمالي الوصولات (LBP),' + stats.totalInvoicesLbp + '\n';
-            csvContent += 'إجمالي النفقات (USD),' + stats.totalExpensesUsd.toFixed(2) + '\n';
-            csvContent += 'إجمالي النفقات (LBP),' + stats.totalExpensesLbp + '\n';
-            csvContent += 'الصافي (USD),' + stats.netUsd.toFixed(2) + '\n';
-            csvContent += 'الصافي (LBP),' + stats.netLbp + '\n\n';
+            // عنوان التقرير
+            csvContent += `تقرير شهري - ${this.app.formatPeriod(period)}\n`;
+            csvContent += `تاريخ التقرير,${new Date().toLocaleDateString('ar-LB')}\n\n`;
 
-            // تفاصيل الوصولات
-            csvContent += 'تفاصيل الوصولات\n';
-            csvContent += 'المشترك,الاستهلاك (كيلو واط),المبلغ (USD),المبلغ (LBP)\n';
-            
+            // إحصائيات الفواتير
+            csvContent += `إحصائيات الفواتير\n`;
+            csvContent += `عدد الفواتير,${periodInvoices.length}\n`;
+            csvContent += `إجمالي الاستهلاك,${periodInvoices.reduce((sum, inv) => sum + inv.consumptionKwh, 0).toFixed(2)} كيلو واط\n`;
+            csvContent += `إجمالي الفواتير (USD),${periodInvoices.reduce((sum, inv) => sum + inv.totalUsd, 0).toFixed(2)}\n`;
+            csvContent += `إجمالي الفواتير (LBP),${periodInvoices.reduce((sum, inv) => sum + inv.totalLbp, 0)}\n\n`;
+
+            // إحصائيات المصاريف
+            csvContent += `إحصائيات المصاريف\n`;
+            csvContent += `عدد المصاريف,${periodExpenses.length}\n`;
+            csvContent += `إجمالي المصاريف (USD),${periodExpenses.filter(exp => exp.amountCurrency === 'USD').reduce((sum, exp) => sum + exp.amountValue, 0).toFixed(2)}\n`;
+            csvContent += `إجمالي المصاريف (LBP),${periodExpenses.filter(exp => exp.amountCurrency === 'LBP').reduce((sum, exp) => sum + exp.amountValue, 0)}\n\n`;
+
+            // تفاصيل الفواتير
+            csvContent += `تفاصيل الفواتير\n`;
+            csvContent += `اسم الزبون,الاستهلاك (كيلو واط),المجموع (USD),المجموع (LBP)\n`;
             periodInvoices.forEach(invoice => {
                 const customer = this.app.customers.find(c => c.id === invoice.customerId);
-                const customerName = customer ? customer.name : 'مشترك محذوف';
-                csvContent += `"${customerName}",${invoice.consumptionKwh.toFixed(2)},${invoice.totalUsd.toFixed(2)},${invoice.totalLbp}\n`;
+                csvContent += `${customer ? customer.name : 'زبون محذوف'},${invoice.consumptionKwh},${invoice.totalUsd.toFixed(2)},${invoice.totalLbp}\n`;
             });
 
-            csvContent += '\n';
+            csvContent += `\n`;
 
-            // تفاصيل النفقات
-            csvContent += 'تفاصيل النفقات\n';
-            csvContent += 'الوصف,النوع,المبلغ,العملة\n';
-            
+            // تفاصيل المصاريف
+            csvContent += `تفاصيل المصاريف\n`;
+            csvContent += `الوصف,النوع,المبلغ,العملة\n`;
             periodExpenses.forEach(expense => {
-                csvContent += `"${expense.label}","${expense.type === 'DIESEL' ? 'ثمن مازوت' : 'أخرى'}",${expense.amountValue},${expense.amountCurrency}\n`;
+                csvContent += `${expense.label},${this.getExpenseTypeLabel(expense.type)},${expense.amountValue},${expense.amountCurrency}\n`;
             });
 
             // تحميل الملف
@@ -422,4 +398,3 @@ document.addEventListener('DOMContentLoaded', () => {
         window.app.expensesManager = new ExpensesReportsManager(window.app);
     }
 });
-

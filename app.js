@@ -22,12 +22,14 @@ class ElectricitySubscriptionApp {
             // تحميل الإعدادات من LocalStorage
             const stored = localStorage.getItem('settings');
             const defaultSettings = {
-                name: 'اشتراك الكهرباء',
+                name: 'اشتراك كهرباء الضيعة',
                 address: '',
                 phone: '',
-                defaultCurrencyMode: 'USD',
+                defaultCurrency: 'USD',
                 exchangeRate: 90000,
-                lbpRounding: 1000,
+                defaultPriceUsd: 0.45,
+                defaultPriceLbp: 40000,
+                defaultSubscription: 6,
                 printTemplate: 'A5'
             };
             
@@ -45,51 +47,21 @@ class ElectricitySubscriptionApp {
         }
     }
 
-    async createDefaultTenant() {
-        try {
-            const tenantData = {
-                ownerUid: this.currentUser.uid,
-                name: 'اشتراك الكهرباء',
-                address: '',
-                phone: '',
-                defaultCurrencyMode: 'USD',
-                exchangeRate: 90000,
-                lbpRounding: 1000,
-                printTemplate: 'A5',
-                createdAt: firebase.serverTimestamp(),
-                updatedAt: firebase.serverTimestamp()
-            };
-
-            const docRef = await firebase.addDoc(
-                firebase.collection(firebase.db, 'tenants'),
-                tenantData
-            );
-            
-            this.currentTenant = { id: docRef.id, data: () => tenantData };
-            this.settings = tenantData;
-            this.updateTenantName();
-        } catch (error) {
-            console.error('خطأ في إنشاء الاشتراك:', error);
-            this.showToast('خطأ في إنشاء الاشتراك', 'error');
-        }
-    }
-
     async loadAllData() {
         if (!this.currentTenant) return;
 
         try {
             // تحميل الإعدادات
-            this.settings = this.currentTenant.data();
-            this.updateTenantName();
             this.loadSettingsForm();
+            this.updateTenantName();
 
-            // تحميل المشتركين
+            // تحميل الزبائن
             await this.loadCustomers();
             
-            // تحميل الوصولات
+            // تحميل الفواتير
             await this.loadInvoices();
             
-            // تحميل النفقات
+            // تحميل المصاريف
             await this.loadExpenses();
 
             // تحديث الفلاتر
@@ -146,27 +118,32 @@ class ElectricitySubscriptionApp {
             });
         });
 
-        // إضافة مشترك
+        // إضافة زبون
         document.getElementById('add-customer-btn').addEventListener('click', () => {
             this.showCustomerModal();
         });
 
-        // إضافة وصل
+        // إضافة فاتورة
         document.getElementById('add-invoice-btn').addEventListener('click', () => {
             this.showInvoiceModal();
         });
 
-        // إضافة نفقة
+        // إضافة مصروف
         document.getElementById('add-expense-btn').addEventListener('click', () => {
             this.showExpenseModal();
         });
 
-        // البحث في المشتركين
+        // البحث في الزبائن
         document.getElementById('customer-search').addEventListener('input', (e) => {
             this.filterCustomers(e.target.value);
         });
 
-        // فلاتر الوصولات
+        // فلاتر الزبائن
+        document.getElementById('customer-status-filter').addEventListener('change', () => {
+            this.filterCustomers();
+        });
+
+        // فلاتر الفواتير
         document.getElementById('invoice-period-filter').addEventListener('change', () => {
             this.filterInvoices();
         });
@@ -174,14 +151,31 @@ class ElectricitySubscriptionApp {
             this.filterInvoices();
         });
 
-        // فلاتر النفقات
+        // فلاتر السجلات
+        document.getElementById('history-customer-filter').addEventListener('change', () => {
+            this.filterHistory();
+        });
+        document.getElementById('history-year-filter').addEventListener('change', () => {
+            this.filterHistory();
+        });
+        document.getElementById('history-month-filter').addEventListener('change', () => {
+            this.filterHistory();
+        });
+
+        // فلاتر المصاريف
         document.getElementById('expense-period-filter').addEventListener('change', () => {
+            this.filterExpenses();
+        });
+        document.getElementById('expense-type-filter').addEventListener('change', () => {
             this.filterExpenses();
         });
 
         // التقارير
         document.getElementById('generate-report-btn').addEventListener('click', () => {
             this.generateReport();
+        });
+        document.getElementById('export-report-btn').addEventListener('click', () => {
+            this.exportReport();
         });
 
         // الإعدادات
@@ -202,32 +196,27 @@ class ElectricitySubscriptionApp {
     }
 
     setupModalEventListeners() {
-        // نموذج المشترك
+        // نموذج الزبون
         document.getElementById('customer-form').addEventListener('submit', (e) => {
             e.preventDefault();
             this.saveCustomer();
         });
 
-        // نموذج الوصل
+        // نموذج الفاتورة
         document.getElementById('invoice-form').addEventListener('submit', (e) => {
             e.preventDefault();
             this.saveInvoice();
         });
 
-        // نموذج النفقة
+        // نموذج المصروف
         document.getElementById('expense-form').addEventListener('submit', (e) => {
             e.preventDefault();
             this.saveExpense();
         });
 
-        // حساب الوصل
+        // حساب الفاتورة
         document.getElementById('calculate-btn').addEventListener('click', () => {
             this.calculateInvoice();
-        });
-
-        // تغيير وضع التسعير
-        document.getElementById('pricing-mode').addEventListener('change', () => {
-            this.updatePricingMode();
         });
 
         // تغيير قراءات العداد
@@ -238,12 +227,17 @@ class ElectricitySubscriptionApp {
             this.calculateConsumption();
         });
 
+        // تغيير الزبون في الفاتورة
+        document.getElementById('invoice-customer').addEventListener('change', () => {
+            this.updateCustomerData();
+        });
+
         // إضافة دفعة إضافية
         document.getElementById('add-extra-btn').addEventListener('click', () => {
             this.addExtraItem();
         });
 
-        // تغيير نوع النفقة
+        // تغيير نوع المصروف
         document.getElementById('expense-type').addEventListener('change', (e) => {
             this.updateExpenseType(e.target.value);
         });
@@ -278,18 +272,6 @@ class ElectricitySubscriptionApp {
         this.showLoginScreen();
     }
 
-    getAuthErrorMessage(errorCode) {
-        const messages = {
-            'auth/user-not-found': 'المستخدم غير موجود',
-            'auth/wrong-password': 'كلمة المرور غير صحيحة',
-            'auth/invalid-email': 'البريد الإلكتروني غير صحيح',
-            'auth/user-disabled': 'تم تعطيل هذا الحساب',
-            'auth/too-many-requests': 'محاولات كثيرة، حاول مرة أخرى لاحقاً',
-            'auth/network-request-failed': 'خطأ في الشبكة'
-        };
-        return messages[errorCode] || 'خطأ في تسجيل الدخول';
-    }
-
     showLoginScreen() {
         document.getElementById('login-screen').classList.add('active');
         document.getElementById('app-screen').classList.remove('active');
@@ -312,6 +294,11 @@ class ElectricitySubscriptionApp {
         // إظهار التبويب المحدد
         document.getElementById(`${tabName}-tab`).classList.add('active');
         document.querySelector(`[data-tab="${tabName}"]`).classList.add('active');
+
+        // تحديث البيانات حسب التبويب
+        if (tabName === 'history') {
+            this.loadHistory();
+        }
     }
 
     updateTenantName() {
@@ -332,9 +319,11 @@ class ElectricitySubscriptionApp {
         document.getElementById('tenant-name-input').value = this.settings.name || '';
         document.getElementById('tenant-address').value = this.settings.address || '';
         document.getElementById('tenant-phone').value = this.settings.phone || '';
-        document.getElementById('default-currency').value = this.settings.defaultCurrencyMode || 'USD';
+        document.getElementById('default-currency').value = this.settings.defaultCurrency || 'USD';
         document.getElementById('exchange-rate').value = this.settings.exchangeRate || 90000;
-        document.getElementById('lbp-rounding').value = this.settings.lbpRounding || 1000;
+        document.getElementById('default-price-usd').value = this.settings.defaultPriceUsd || 0.45;
+        document.getElementById('default-price-lbp').value = this.settings.defaultPriceLbp || 40000;
+        document.getElementById('default-subscription').value = this.settings.defaultSubscription || 6;
         document.getElementById('print-template').value = this.settings.printTemplate || 'A5';
     }
 
@@ -344,9 +333,11 @@ class ElectricitySubscriptionApp {
                 name: document.getElementById('tenant-name-input').value,
                 address: document.getElementById('tenant-address').value,
                 phone: document.getElementById('tenant-phone').value,
-                defaultCurrencyMode: document.getElementById('default-currency').value,
+                defaultCurrency: document.getElementById('default-currency').value,
                 exchangeRate: parseFloat(document.getElementById('exchange-rate').value),
-                lbpRounding: parseInt(document.getElementById('lbp-rounding').value),
+                defaultPriceUsd: parseFloat(document.getElementById('default-price-usd').value),
+                defaultPriceLbp: parseFloat(document.getElementById('default-price-lbp').value),
+                defaultSubscription: parseFloat(document.getElementById('default-subscription').value),
                 printTemplate: document.getElementById('print-template').value,
                 updatedAt: new Date().toISOString()
             };
@@ -369,15 +360,22 @@ class ElectricitySubscriptionApp {
         const form = document.getElementById('customer-form');
 
         if (customer) {
-            title.textContent = 'تعديل المشترك';
+            title.textContent = 'تعديل الزبون';
             document.getElementById('customer-name').value = customer.name || '';
-            document.getElementById('customer-phone').value = customer.phone || '';
             document.getElementById('customer-address').value = customer.address || '';
-            document.getElementById('customer-meter-ref').value = customer.meterRef || '';
+            document.getElementById('customer-phone').value = customer.phone || '';
+            document.getElementById('customer-subscription').value = customer.subscription || this.settings.defaultSubscription;
+            document.getElementById('customer-price-usd').value = customer.priceUsd || this.settings.defaultPriceUsd;
+            document.getElementById('customer-price-lbp').value = customer.priceLbp || this.settings.defaultPriceLbp;
+            document.getElementById('customer-status').value = customer.status || 'active';
             form.dataset.customerId = customer.id;
         } else {
-            title.textContent = 'إضافة مشترك جديد';
+            title.textContent = 'إضافة زبون جديد';
             form.reset();
+            // تعيين القيم الافتراضية
+            document.getElementById('customer-subscription').value = this.settings.defaultSubscription;
+            document.getElementById('customer-price-usd').value = this.settings.defaultPriceUsd;
+            document.getElementById('customer-price-lbp').value = this.settings.defaultPriceLbp;
             delete form.dataset.customerId;
         }
 
@@ -388,9 +386,12 @@ class ElectricitySubscriptionApp {
         try {
             const customerData = {
                 name: document.getElementById('customer-name').value,
-                phone: document.getElementById('customer-phone').value,
                 address: document.getElementById('customer-address').value,
-                meterRef: document.getElementById('customer-meter-ref').value,
+                phone: document.getElementById('customer-phone').value,
+                subscription: parseFloat(document.getElementById('customer-subscription').value),
+                priceUsd: parseFloat(document.getElementById('customer-price-usd').value),
+                priceLbp: parseFloat(document.getElementById('customer-price-lbp').value),
+                status: document.getElementById('customer-status').value,
                 updatedAt: new Date().toISOString()
             };
 
@@ -398,18 +399,19 @@ class ElectricitySubscriptionApp {
             const customerId = form.dataset.customerId;
 
             if (customerId) {
-                // تعديل مشترك موجود
+                // تعديل زبون موجود
                 const index = this.customers.findIndex(c => c.id === customerId);
                 if (index !== -1) {
                     this.customers[index] = { ...this.customers[index], ...customerData };
                 }
-                this.showToast('تم تعديل المشترك بنجاح', 'success');
+                this.showToast('تم تعديل الزبون بنجاح', 'success');
             } else {
-                // إضافة مشترك جديد
+                // إضافة زبون جديد
                 customerData.id = 'customer_' + Date.now();
                 customerData.createdAt = new Date().toISOString();
+                customerData.lastMeterReading = 0; // قراءة العداد الأخيرة
                 this.customers.push(customerData);
-                this.showToast('تم إضافة المشترك بنجاح', 'success');
+                this.showToast('تم إضافة الزبون بنجاح', 'success');
             }
 
             // حفظ في LocalStorage
@@ -418,25 +420,26 @@ class ElectricitySubscriptionApp {
             this.closeModal(document.getElementById('customer-modal'));
             await this.loadCustomers();
         } catch (error) {
-            console.error('خطأ في حفظ المشترك:', error);
-            this.showToast('خطأ في حفظ المشترك', 'error');
+            console.error('خطأ في حفظ الزبون:', error);
+            this.showToast('خطأ في حفظ الزبون', 'error');
         }
     }
 
     renderCustomers() {
         const container = document.getElementById('customers-list');
         if (this.customers.length === 0) {
-            container.innerHTML = '<div class="list-item"><p>لا يوجد مشتركين</p></div>';
+            container.innerHTML = '<div class="list-item"><p>لا يوجد زبائن</p></div>';
             return;
         }
 
         container.innerHTML = this.customers.map(customer => `
             <div class="list-item">
                 <div class="list-item-info">
-                    <h4>${customer.name}</h4>
+                    <h4>${customer.name} <span class="status-badge ${customer.status}">${customer.status === 'active' ? 'نشط' : 'متوقف'}</span></h4>
                     ${customer.phone ? `<p>📞 ${customer.phone}</p>` : ''}
                     ${customer.address ? `<p>📍 ${customer.address}</p>` : ''}
-                    ${customer.meterRef ? `<p>🔢 العداد: ${customer.meterRef}</p>` : ''}
+                    <p>💰 الاشتراك: $${customer.subscription} | الكيلو: $${customer.priceUsd}</p>
+                    <p>🔢 آخر قراءة: ${customer.lastMeterReading || 0}</p>
                 </div>
                 <div class="list-item-actions">
                     <button class="btn btn-secondary" onclick="app.editCustomer('${customer.id}')">تعديل</button>
@@ -454,24 +457,37 @@ class ElectricitySubscriptionApp {
     }
 
     async deleteCustomer(customerId) {
-        if (!confirm('هل أنت متأكد من حذف هذا المشترك؟')) return;
+        if (!confirm('هل أنت متأكد من حذف هذا الزبون؟')) return;
 
         try {
             this.customers = this.customers.filter(c => c.id !== customerId);
             localStorage.setItem('customers', JSON.stringify(this.customers));
-            this.showToast('تم حذف المشترك بنجاح', 'success');
+            this.showToast('تم حذف الزبون بنجاح', 'success');
             await this.loadCustomers();
         } catch (error) {
-            console.error('خطأ في حذف المشترك:', error);
-            this.showToast('خطأ في حذف المشترك', 'error');
+            console.error('خطأ في حذف الزبون:', error);
+            this.showToast('خطأ في حذف الزبون', 'error');
         }
     }
 
-    filterCustomers(searchTerm) {
-        const filtered = this.customers.filter(customer => 
-            customer.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            (customer.phone && customer.phone.includes(searchTerm))
-        );
+    filterCustomers(searchTerm = '') {
+        const search = searchTerm || document.getElementById('customer-search').value;
+        const statusFilter = document.getElementById('customer-status-filter').value;
+        
+        let filtered = this.customers;
+
+        // فلترة حسب النص
+        if (search) {
+            filtered = filtered.filter(customer => 
+                customer.name.toLowerCase().includes(search.toLowerCase()) ||
+                (customer.phone && customer.phone.includes(search))
+            );
+        }
+
+        // فلترة حسب الحالة
+        if (statusFilter) {
+            filtered = filtered.filter(customer => customer.status === statusFilter);
+        }
         
         const container = document.getElementById('customers-list');
         if (filtered.length === 0) {
@@ -482,10 +498,11 @@ class ElectricitySubscriptionApp {
         container.innerHTML = filtered.map(customer => `
             <div class="list-item">
                 <div class="list-item-info">
-                    <h4>${customer.name}</h4>
+                    <h4>${customer.name} <span class="status-badge ${customer.status}">${customer.status === 'active' ? 'نشط' : 'متوقف'}</span></h4>
                     ${customer.phone ? `<p>📞 ${customer.phone}</p>` : ''}
                     ${customer.address ? `<p>📍 ${customer.address}</p>` : ''}
-                    ${customer.meterRef ? `<p>🔢 العداد: ${customer.meterRef}</p>` : ''}
+                    <p>💰 الاشتراك: $${customer.subscription} | الكيلو: $${customer.priceUsd}</p>
+                    <p>🔢 آخر قراءة: ${customer.lastMeterReading || 0}</p>
                 </div>
                 <div class="list-item-actions">
                     <button class="btn btn-secondary" onclick="app.editCustomer('${customer.id}')">تعديل</button>
@@ -522,13 +539,13 @@ class ElectricitySubscriptionApp {
         const periodSelects = [
             'invoice-period-filter',
             'expense-period-filter',
-            'report-period'
+            'report-month'
         ];
 
         periodSelects.forEach(selectId => {
             const select = document.getElementById(selectId);
             const currentValue = select.value;
-            select.innerHTML = selectId === 'report-period' 
+            select.innerHTML = selectId === 'report-month' 
                 ? '<option value="">اختر الشهر</option>'
                 : '<option value="">جميع الأشهر</option>';
             
@@ -542,19 +559,45 @@ class ElectricitySubscriptionApp {
             select.value = currentValue;
         });
 
-        // تحديث فلتر المشتركين
-        const customerSelect = document.getElementById('invoice-customer-filter');
-        const currentValue = customerSelect.value;
-        customerSelect.innerHTML = '<option value="">جميع المشتركين</option>';
-        
-        this.customers.forEach(customer => {
-            const option = document.createElement('option');
-            option.value = customer.id;
-            option.textContent = customer.name;
-            customerSelect.appendChild(option);
+        // تحديث فلتر الزبائن
+        const customerSelects = [
+            'invoice-customer-filter',
+            'history-customer-filter'
+        ];
+
+        customerSelects.forEach(selectId => {
+            const select = document.getElementById(selectId);
+            const currentValue = select.value;
+            select.innerHTML = selectId === 'invoice-customer-filter' 
+                ? '<option value="">جميع الزبائن</option>'
+                : '<option value="">جميع الزبائن</option>';
+            
+            this.customers.forEach(customer => {
+                const option = document.createElement('option');
+                option.value = customer.id;
+                option.textContent = customer.name;
+                select.appendChild(option);
+            });
+            
+            select.value = currentValue;
         });
+
+        // تحديث فلاتر السنوات
+        const years = [...new Set(this.invoices.map(inv => inv.period.split('-')[0]))].sort().reverse();
+        const yearSelect = document.getElementById('report-year');
+        const historyYearSelect = document.getElementById('history-year-filter');
         
-        customerSelect.value = currentValue;
+        [yearSelect, historyYearSelect].forEach(select => {
+            const currentValue = select.value;
+            select.innerHTML = '<option value="">اختر السنة</option>';
+            years.forEach(year => {
+                const option = document.createElement('option');
+                option.value = year;
+                option.textContent = year;
+                select.appendChild(option);
+            });
+            select.value = currentValue;
+        });
     }
 
     formatPeriod(period) {
@@ -567,7 +610,7 @@ class ElectricitySubscriptionApp {
     }
 
     roundLBP(value) {
-        const rounding = this.settings.lbpRounding || 1000;
+        const rounding = 1000;
         return Math.round(value / rounding) * rounding;
     }
 
@@ -583,40 +626,14 @@ class ElectricitySubscriptionApp {
         return new Intl.NumberFormat('ar-LB').format(value);
     }
 
-    // وظائف إضافية للوصولات
-    async loadInvoices() {
-        const invoicesQuery = firebase.query(
-            firebase.collection(firebase.db, `tenants/${this.currentTenant.id}/invoices`),
-            firebase.orderBy('period', 'desc')
-        );
-        const snapshot = await firebase.getDocs(invoicesQuery);
-        this.invoices = snapshot.docs.map(doc => ({
-            id: doc.id,
-            ...doc.data()
-        }));
-        this.renderInvoices();
-    }
-
+    // وظائف إضافية للفواتير
     renderInvoices() {
         if (this.invoiceManager) {
             this.invoiceManager.renderInvoices();
         }
     }
 
-    // وظائف إضافية للنفقات
-    async loadExpenses() {
-        const expensesQuery = firebase.query(
-            firebase.collection(firebase.db, `tenants/${this.currentTenant.id}/expenses`),
-            firebase.orderBy('period', 'desc')
-        );
-        const snapshot = await firebase.getDocs(expensesQuery);
-        this.expenses = snapshot.docs.map(doc => ({
-            id: doc.id,
-            ...doc.data()
-        }));
-        this.renderExpenses();
-    }
-
+    // وظائف إضافية للمصاريف
     renderExpenses() {
         if (this.expensesManager) {
             this.expensesManager.renderExpenses();
@@ -630,6 +647,12 @@ class ElectricitySubscriptionApp {
         }
     }
 
+    exportReport() {
+        if (this.expensesManager) {
+            this.expensesManager.exportReport();
+        }
+    }
+
     // وظائف إضافية للفلاتر
     filterInvoices() {
         if (this.invoiceManager) {
@@ -640,6 +663,80 @@ class ElectricitySubscriptionApp {
     filterExpenses() {
         if (this.expensesManager) {
             this.expensesManager.filterExpenses();
+        }
+    }
+
+    filterHistory() {
+        if (this.invoiceManager) {
+            this.invoiceManager.filterHistory();
+        }
+    }
+
+    loadHistory() {
+        if (this.invoiceManager) {
+            this.invoiceManager.loadHistory();
+        }
+    }
+
+    // وظائف الفواتير
+    showInvoiceModal(invoice = null) {
+        if (this.invoiceManager) {
+            this.invoiceManager.showInvoiceModal(invoice);
+        }
+    }
+
+    saveInvoice() {
+        if (this.invoiceManager) {
+            this.invoiceManager.saveInvoice();
+        }
+    }
+
+    calculateInvoice() {
+        if (this.invoiceManager) {
+            this.invoiceManager.calculateInvoice();
+        }
+    }
+
+    calculateConsumption() {
+        if (this.invoiceManager) {
+            this.invoiceManager.calculateConsumption();
+        }
+    }
+
+    updateCustomerData() {
+        if (this.invoiceManager) {
+            this.invoiceManager.updateCustomerData();
+        }
+    }
+
+    addExtraItem() {
+        if (this.invoiceManager) {
+            this.invoiceManager.addExtraItem();
+        }
+    }
+
+    printInvoice() {
+        if (this.invoiceManager) {
+            this.invoiceManager.printInvoice();
+        }
+    }
+
+    // وظائف المصاريف
+    showExpenseModal(expense = null) {
+        if (this.expensesManager) {
+            this.expensesManager.showExpenseModal(expense);
+        }
+    }
+
+    saveExpense() {
+        if (this.expensesManager) {
+            this.expensesManager.saveExpense();
+        }
+    }
+
+    updateExpenseType(type) {
+        if (this.expensesManager) {
+            this.expensesManager.updateExpenseType(type);
         }
     }
 }
